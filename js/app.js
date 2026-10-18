@@ -377,7 +377,7 @@
         <td class="n">${f1(p.red.score, 0)}–${f1(p.blue.score, 0)}</td>
         <td class="sd">${played && m.comp === 'qm' ? '' : bonusTxt}</td>
         <td class="n">${actual}</td>
-        <td>${surr.length ? `<span class="sd" title="Surrogates">S: ${surr.map(tnum).join(',')}</span>` : ''}</td>
+        <td>${surr.length ? `<span class="pill muted" title="Surrogate = an extra match the schedule needed. It earns these teams no ranking points and doesn't count toward their ranking score (their robot performance still counts toward ratings).">surrogate: ${surr.map(tnum).join(', ')}</span>` : ''}</td>
         <td><button class="btn small" data-match="${esc(m.key)}">${played ? 'Edit' : 'Enter'}</button></td></tr>`;
     }).join('');
     return `<div class="toolbar">
