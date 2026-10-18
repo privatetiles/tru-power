@@ -249,6 +249,12 @@
       </tbody></table>`;
   }
 
+  // Plain-English rule for a bonus RP, e.g. "at least 100 fuel scored".
+  function bonusRule(b, thr) {
+    const what = { fuel: 'fuel scored', tower: 'tower points', autoFuel: 'auto fuel' }[b.comp] || b.comp;
+    return thr != null ? `at least ${thr} ${what}` : what;
+  }
+
   function allianceHtml(teams, c) { return `<span class="alliance ${c}">${teams.map(t => teamLink(t)).join(' ')}</span>`; }
 
   // ----- sortable table -----
@@ -359,8 +365,10 @@
         const upset = (w === 'r' && p.pRed < 0.35) || (w === 'b' && p.pRed > 0.65);
         if (upset) actual += ' <span class="pill bad" title="Model favoured the other alliance">upset</span>';
       }
+      // Each bonus RP spelled out, with red's chance in red and blue's in blue.
+      const thrNow = R.thr || {};
       const bonusTxt = Object.keys(p.red.bonus).length
-        ? S.game.bonuses.map(b => `${b.label[0]} ${pct(p.red.bonus[b.key])}/${pct(p.blue.bonus[b.key])}`).join(' · ') : '';
+        ? S.game.bonuses.map(b => `<span title="${esc(b.label)}: ${esc(bonusRule(b, thrNow[b.key]))}">${esc(b.label)} <span class="red-t">${pct(p.red.bonus[b.key])}</span>/<span class="blue-t">${pct(p.blue.bonus[b.key])}</span></span>`).join(' · ') : '';
       const surr = (m.redSurr || []).concat(m.blueSurr || []);
       return `<tr class="${ot && (m.red.includes(ot) || m.blue.includes(ot)) ? 'ours' : ''}">
         <td><a data-match="${esc(m.key)}"><b>${matchLabel(m)}</b></a>${m.source === 'manual' ? ' <span class="pill muted" title="Entered by hand">manual</span>' : ''}</td>
@@ -382,8 +390,8 @@
         <button class="btn small" data-act="paste-results">Paste scores</button>
         ${navigator.onLine && S.settings.tbaKey && !ev.demo ? '<button class="btn small primary" data-act="tba-refresh">Refresh from TBA</button>' : ''}
       </div>
-      <p class="help">Predictions use the current ratings (for played matches this includes the match itself). Bonus columns show Red/Blue chances for each bonus RP. Click a match to enter or correct its result — ratings update instantly.</p>
-      <div class="table-wrap"><table><thead><tr><th>Match</th><th>Red</th><th>Blue</th><th>Win chance</th><th class="n">Pred.</th><th>Bonus RP chance</th><th class="n">Result</th><th></th><th></th></tr></thead>
+      <p class="help">Predictions use the current ratings (for played matches this includes the match itself). The bonus columns show each alliance's chance of earning each bonus RP (${S.game.bonuses.map(b => `${b.label}: ${bonusRule(b, (R.thr || {})[b.key])}`).join('; ') || 'none this season'}). Click a match to enter or correct its result — ratings update instantly.</p>
+      <div class="table-wrap"><table><thead><tr><th>Match</th><th>Red</th><th>Blue</th><th>Win chance</th><th class="n">Pred.</th><th title="Chance each alliance earns each bonus ranking point (red / blue)">Bonus RP chance <span class="red-t">red</span>/<span class="blue-t">blue</span></th><th class="n">Result</th><th></th><th></th></tr></thead>
       <tbody>${rows || '<tr><td colspan="9" class="empty">No matches yet — paste the schedule or add matches.</td></tr>'}</tbody></table></div>`;
   }
 
