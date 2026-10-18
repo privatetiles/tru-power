@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRU POWER</title>
+<link rel="stylesheet" href="css/app.css?v=3">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">TRU <b>POWER</b></div>
+  <select id="eventSelect" title="Event"></select>
+  <div id="status" class="status"></div>
+</header>
+<nav class="tabs" id="tabs">
+  <button data-tab="overview">Overview</button>
+  <button data-tab="teams">Teams</button>
+  <button data-tab="luck">Schedule Luck</button>
+  <button data-tab="matches">Matches</button>
+  <button data-tab="forecast">Forecast</button>
+  <button data-tab="predict">Predictor</button>
+  <button data-tab="data">Data</button>
+</nav>
+<main id="main"></main>
+<div id="modal" class="modal" hidden>
+  <div class="modal-box">
+    <button class="modal-close" data-close title="Close (Esc)">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="js/linalg.js?v=3"></script>
+<script src="js/games.js?v=3"></script>
+<script src="js/model.js?v=3"></script>
+<script src="js/sim.js?v=3"></script>
+<script src="js/demo.js?v=3"></script>
+<script src="js/tba.js?v=3"></script>
+<script src="js/store.js?v=3"></script>
+<script src="js/app.js?v=3"></script>
+</body>
+</html>
