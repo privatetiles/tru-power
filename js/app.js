@@ -288,7 +288,7 @@
 
   function accuracyHtml(a) {
     if (!a.n) return '<span class="help">No decided matches to check yet.</span>';
-    return `Out-of-sample accuracy here: <b>${pct(a.correct / a.n, 1)}</b> of ${a.n} matches · Brier ${f1(a.brier / a.n, 3)} <span class="help">(coin flip = 0.25, good models ≈ 0.17–0.20)</span>`;
+    return `Out-of-sample accuracy here: <b>${pct(a.correct / a.n, 1)}</b> of ${a.n} matches · Brier ${f1(a.brier / a.n, 3)} <span class="help">(Brier runs from 0 = perfect to 1; always guessing 50% scores 0.25; lower is better. Across 2024–2026 TRU POWER averaged 0.140–0.157.)</span>`;
   }
 
   function luckList(rows) {

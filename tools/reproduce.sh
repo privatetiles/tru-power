@@ -34,12 +34,14 @@ done
 wait
 
 echo "== 4/5 Head-to-head with event-level confidence intervals"
+rm -f "$OUT/compare.txt"
 for Y in 2026 2025 2024; do
   echo "--- $Y" >> "$OUT/compare.txt"
   node tools/compare.js "$DATA/$Y/matches" "$OUT/tru-$Y.json" "$OUT/epa-$Y.json" "TRU POWER" "Statbotics EPA" >> "$OUT/compare.txt"
 done
 
-echo "== 5/5 Summary"
+echo "== 5/5 Full metrics (docs/backtest/BACKTEST.md, predictions-all.csv) and summary"
+node tools/metrics.js "$DATA" "$OUT" "$OUT/backtest" > /dev/null
 {
   echo "TRU POWER reproduction run — $(date)"
   echo "node $(node --version)"

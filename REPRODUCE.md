@@ -26,6 +26,12 @@ The numbers below are from a full run of `reproduce.sh` on 2026-10-20 with Node 
 
 ## Expected results
 
+The complete tables (accuracy with intervals, Brier, Brier skill, log loss, calibration, results by event phase) are published in [docs/backtest/BACKTEST.md](docs/backtest/BACKTEST.md). The script regenerates them into `results/backtest/` for comparison. `docs/backtest/predictions-all.csv` has every match's predictions, so any number can be checked without rerunning the backtest.
+
+**Brier score:** mean (p − outcome)². It runs from 0 (perfect) to 1, always predicting 50% scores exactly 0.25, and lower is better.
+
+### Headline numbers
+
 **Official-event qualification matches**, each predicted only from matches before it (`backtest-tba.js`, `epa-baseline.js`):
 
 | Season | Matches | TRU POWER winners / Brier | Statbotics EPA (re-implemented) winners / Brier |

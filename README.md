@@ -61,84 +61,66 @@ Full research notes, formulas and sources are in [RESEARCH.md](RESEARCH.md).
 
 ### Validation
 
-#### Real 2026 REBUILT season
+The full results, with method and definitions, are in **[docs/backtest/BACKTEST.md](docs/backtest/BACKTEST.md)**. Every match's predictions are in `docs/backtest/predictions-all.csv`.
 
-This is the most important test. It covers every 2026 event on TBA, 18,371 decided qualification matches.
-- Events were processed in date order.
-- Each event's priors come only from events that had already finished.
-- Each match was predicted from earlier matches only.
+**Method**
+- **Matches:** official-event qualification matches with a winner. Each is predicted only from matches before it, using priors from events that had already finished.
+- **Seasons:** 2026 is the season the settings were tuned on; 2025 and 2024 are blind tests with all settings frozen.
+- **Baseline:** Statbotics EPA, re-implemented from its open-source code because its API was unavailable.
+- **Intervals:** 95% cluster-bootstrap intervals that resample whole events, because matches at one event share teams.
 
-| | Official events (208) | Offseasons (93) |
-|---|---|---|
-| **Match winner accuracy** | **80.0%** | **77.6%** |
-| Accuracy, first third of each event | 76.1% | 75.7% |
-| Brier score (lower is better; coin flip = 0.25) | 0.140 | 0.152 |
-| Plain OPR, for comparison | 76.1% (69.6% early) | 73.9% |
-| Energized RP chance: predicted vs actual | 57.8% vs 58.1% | 62.3% vs 57.2% |
-| Supercharged RP chance: predicted vs actual | 6.4% vs 8.2% | 9.8% vs 12.5% |
+**What the Brier score means.** Brier score = mean of (predicted probability − outcome)².
+- It runs from 0 (perfect) to 1 (confidently wrong every time).
+- Always predicting 50% scores exactly 0.25.
+- Lower is better.
+- *Brier skill* = 1 − Brier / 0.25: the improvement over always saying 50%.
 
-- Win chances are well calibrated: when it says 75%, the favourite wins about 77% of the time.
-- Schedule luck averaged ±0.23 RP per match. Removing it changes about 1.3 of the top-8 seeds at a typical event.
+**Results**
 
-#### Held-out season: 2025 (never used for tuning)
+| Season | Matches | TRU POWER winners · Brier | EPA winners · Brier | Brier difference, TRU POWER better if + (95% CI) |
+|---|---|---|---|---|
+| 2026 (tuned) | 15,132 | 80.0% · 0.1397 | 79.9% · 0.1446 | +0.0050 (+0.0032 to +0.0068) |
+| 2025 (blind) | 14,686 | 78.1% · 0.1493 | 78.1% · 0.1522 | +0.0029 (+0.0013 to +0.0044) |
+| 2024 (blind) | 13,937 | 77.0% · 0.1565 | 77.0% · 0.1573 | +0.0008 (−0.0007 to +0.0024) |
 
-All settings were tuned on 2026, so 2026 accuracy is slightly optimistic. To check that the gains generalize, every setting was frozen and the model was run on the 2025 season, a different game (REEFSCAPE) the model had never seen.
+**Precisely what this supports**
+- **Picking winners:** no detectable difference from EPA in any season. Each accuracy-difference interval spans about ±0.5 percentage points around zero.
+- **Probabilities:** a lower Brier score than EPA in 2026 and 2025, with intervals above zero. In 2024 the difference is not distinguishable from zero. Log loss shows the same pattern.
+- **Calibration:** both models are slightly under-confident (logistic calibration slope above 1).
 
-| 2025 official events (14,686 matches) | Winners called | Brier |
-|---|---|---|
-| **TRU POWER** | **78.1%** | **0.1493** |
-| Statbotics EPA (re-implemented) | 78.1% | 0.1523 |
-| Plain OPR | 74.7% | 0.1709 |
+| Season | TRU POWER slope | EPA slope | TRU POWER calibration error | EPA calibration error |
+|---|---|---|---|---|
+| 2026 | 1.08 | 1.34 | 2.6% | 5.3% |
+| 2025 | 1.10 | 1.32 | 1.6% | 4.3% |
+| 2024 | 1.04 | 1.26 | 1.8% | 3.6% |
 
-The result matches 2026: a tie with EPA on picking winners, and significantly better probabilities (paired Brier difference 0.0030 ± 0.0013, z = 4.4).
-
-#### Three seasons, with event-level uncertainty
-
-Matches at one event share teams, so they aren't independent. The ranges below come from resampling whole events (`node tools/compare.js`).
-
-| Season | TRU POWER winners / Brier | Statbotics EPA winners / Brier | TRU POWER's Brier advantage (95% range) |
-|---|---|---|---|
-| 2026 (tuned on) | 80.0% / 0.1397 | 79.9% / 0.1446 | 0.0032 to 0.0068 — better |
-| 2025 (blind) | 78.1% / 0.1493 | 78.1% / 0.1522 | 0.0013 to 0.0044 — better |
-| 2024 (blind) | 77.0% / 0.1565 | 77.0% / 0.1573 | −0.0008 to 0.0022 — tie |
-
-The accuracy differences span zero in every season, so picking winners is a tie. The probabilities are better in two seasons and never worse.
+- **When in an event:**
+  - In the middle and last thirds of events, TRU POWER's Brier is lower in all three seasons, with intervals above zero.
+  - In the first third, EPA's is lower in all three seasons. That difference is distinguishable from zero only in 2024.
 
 #### Are the ranges honest?
 
 | Check | Result | Target |
 |---|---|---|
-| Alliance score inside the shown 80% range (2026, after widening for fat tails) | 77.6% at z = 1.28, so ranges now use z = 1.35 | 80% |
+| Alliance score inside the shown 80% range (2026; ranges widened from z = 1.28 to 1.35 because scores have fat tails) | 77.6% before widening | 80% |
 | Final rank inside the forecast's 80% range, predicted at mid-event (2026) | 83.4% | 80% |
 | True strength inside a rating's 80% "likely range" (simulated events) | 89.5% | 80% |
 
 The ranges err on the cautious side, as intended.
 
-#### 2019 season
+#### Other evidence
 
-The 2019 backtest uses TBA's public archive, so it is scores only.
+- **Schedule luck (simulated events with known true strength):** rank correlation with true strength.
 
-| | Accuracy | Brier |
-|---|---|---|
-| Plain OPR, within event | 65.7% | 0.210 |
-| This model, no priors | 67.4% | 0.202 |
-| With priors, Championship divisions | 74.3% | 0.169 |
-| Statbotics EPA at 2019 Championship (reference) | 72.2% | — |
+  | Ranking | Correlation |
+  |---|---|
+  | Actual RS | 0.80 |
+  | Luck-adjusted RS | 0.88 |
+  | Plain OPR | 0.94 |
+  | True Potential | 0.965 |
 
-#### Synthetic events with known true strength
-
-Rank correlation with true strength:
-
-| Ranking | Correlation |
-|---|---|
-| Actual RS | 0.80 |
-| Luck-adjusted RS | 0.88 |
-| Plain OPR | 0.94 |
-| True Potential | 0.965 |
-
-**Against Statbotics EPA:** on the same 15,132 matches, EPA (re-implemented from Statbotics' open-source code) scored 79.9% with a Brier of 0.1446. TRU POWER ties on picking winners and has significantly better win probabilities (Brier 0.1396). See RESEARCH.md §10.
-
-**Last season's results** are used as a starting rating for teams with no events yet this season, via TBA's per-event OPRs from the previous year. This raised official-event accuracy from 78.3% to 80.0%. At events where most teams were on their first event, early-match accuracy went from 65.8% to 72.9%.
+- **Last-season priors:** raised 2026 official-event accuracy from 78.3% to 80.0%. At events where most teams had no 2026 history, first-third accuracy went from 65.8% to 72.9%.
+- **2019 (older test, scores only, different setup):** 74.3% at Championship divisions with priors, against 66.9% without. This used TBA's public CSV archive, with no event-clustered intervals.
 
 #### Things the real 2026 data taught us
 
