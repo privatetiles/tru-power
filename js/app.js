@@ -509,7 +509,11 @@
         ${slot(0)}${slot(1)}${slot(2)}</div>`;
     }).join('');
     const placed = new Set(a.slots.flat().filter(Boolean));
-    const pool = S.R.teams.filter(t => !placed.has(t)).map(t => rows[t]).filter(r => r.tp != null).sort((x, y) => y.pickScore - x.pickScore);
+    // Available list order, chosen by the user: best robots (pick score) or event ranking.
+    const byRank = S.settings.poolSort === 'rank';
+    const seedPos = Object.fromEntries(seedOrder().map((t, i) => [t, i]));
+    const pool = S.R.teams.filter(t => !placed.has(t)).map(t => rows[t]).filter(r => r.tp != null)
+      .sort((x, y) => (byRank ? seedPos[x.key] - seedPos[y.key] : y.pickScore - x.pickScore));
     return `<div class="toolbar">
         <label>Alliances <select id="nAlliances">${[2, 3, 4, 5, 6, 7, 8].map(n => `<option ${a.n === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
         <span class="help">${next ? `Next: <b>Alliance ${next.k + 1} ${SLOT_NAMES[next.j].toLowerCase()}</b>` : 'All alliances are full.'}</span>
@@ -520,7 +524,11 @@
         The <span class="pill good">captain · A#</span> tags show who would captain each alliance right now: pick a would-be captain and the tag moves to the next-ranked team. Strength = expected points per match of the robots placed.</p>
       <div class="sel-layout">
         <div class="alliance-grid">${cards}</div>
-        <div class="card pool" data-slot="pool"><h3>Available · best first</h3>
+        <div class="card pool" data-slot="pool"><h3>Available</h3>
+          <div class="seg" role="group" aria-label="Sort available teams">
+            <button class="${byRank ? '' : 'on'}" data-poolsort="best" title="Highest pick score first: True Potential × reliability − fouls">Best robots</button>
+            <button class="${byRank ? 'on' : ''}" data-poolsort="rank" title="Event ranking order (current rank)">Highest ranked</button>
+          </div>
           ${pool.map(r => `<div class="pool-row">${chip(r.key, { pool: true })}<span class="sd">TP ${f1(r.tp)} · rank ${r.rank || '–'}</span>${next ? `<button class="btn small" data-pickteam="${esc(r.key)}">Add ▸</button>` : ''}</div>`).join('') || '<p class="help">Everyone is on an alliance.</p>'}
         </div>
       </div>`;
@@ -1239,6 +1247,8 @@
 
   // ---------- events ----------
   document.addEventListener('click', e => {
+    const ps = e.target.closest('[data-poolsort]');
+    if (ps) { S.settings.poolSort = ps.dataset.poolsort; Store.saveSettings(S.settings); render(); return; }
     const pk = e.target.closest('[data-pickteam],[data-unpick]');
     if (pk) {
       if (pk.dataset.unpick) removeTeam(pk.dataset.unpick);
