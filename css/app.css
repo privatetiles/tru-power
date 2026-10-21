@@ -338,3 +338,14 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .field .f-el-lbl.red { fill: #b42318; }
 .field .f-el-lbl.blue { fill: #1d4ed8; }
 .field .f-side { font-size: 11px; fill: #6b7280; }
+/* Optional timing: slow regions, pauses, animated robot */
+.field .f-slow { fill: none; stroke: #f59f00; stroke-width: 16; stroke-opacity: .35; stroke-linecap: round; stroke-linejoin: round; }
+.field .f-slow-lbl { font-size: 11px; font-weight: 700; fill: #b35c00; }
+.field .f-pause-bg { fill: #ffffff; stroke: #7048e8; stroke-width: 2; }
+.field .f-pause-bar { fill: #7048e8; }
+.field .f-bot { fill: #e8590c; fill-opacity: .85; stroke: #7a2e05; stroke-width: 2; }
+.field .f-bot-nose { fill: #ffffff; }
+.mnum.pause { background: #7048e8; width: auto; padding: 0 6px; border-radius: 10px; }
+.mnum.slow { background: #f59f00; width: auto; padding: 0 6px; border-radius: 10px; }
+.anim { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.anim input[type=range] { flex: 1; min-width: 160px; }

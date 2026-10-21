@@ -207,6 +207,9 @@ Until then, any other year falls back to a generic model that uses total score p
       - A piece that starts where the last one ended continues it.
       - **Link ends** joins two pieces by hand, reversing one if needed. **Erase piece** and **Undo** fix slips.
     - **Markers:** click on a line to add one. It snaps exactly onto the path, points along the direction of travel, and holds a note. Notes sit beside the field.
+    - **Animation (optional):** **Play** runs a robot-sized square (35 in) along the route at about 4 m/s, with 1×/2×/4× speed and a scrubber.
+      - Optional **pause points** (click on the line, set the seconds) and **slow regions** (drag along the line; ½, ¼ or ¾ speed) shape the timing.
+      - Both are saved with the entry and stay attached through joins and links.
     - The team page and printed team report show all traced paths for that team, one color per match, with the marker notes listed.
   - **Fuel counted** checkbox: untick it if you only traced the path or lost count. The path and notes are saved, but no fuel number is, so the ratings aren't fed a false 0.
 - **Scouted fuel per robot:** the match editor has a **Fuel** box for each robot. Typed counts feed that robot's fuel rating directly, so it no longer has to be estimated from the alliance total.

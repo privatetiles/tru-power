@@ -188,7 +188,11 @@
     main.innerHTML = fn();
     if (S.tab === 'predict') updatePrediction();
     if (S.tab === 'data') loadCatalogueAndShow(false);
-    if (S.tab === 'scout') setupPathPad();
+    if (S.tab === 'scout') {
+      setupPathPad();
+      // Editing the route changes its timing: keep the robot where it was, stop playback.
+      if (S.anim) { const st = scoutState(); if (st.paths.length) { S.anim.tl = animTimeline(st); S.anim.t = Math.min(S.anim.t, S.anim.tl.duration); if (S.anim.playing) animStart(); else if (S.anim.t > 0) animDraw(); } else S.anim = null; }
+    }
   }
 
   function emptyState() {
@@ -1107,7 +1111,7 @@
   // One scout watches one robot (their seat: Red 1–3 / Blue 1–3) and counts its fuel.
   const SEATS = [['r', 0, 'Red 1'], ['r', 1, 'Red 2'], ['r', 2, 'Red 3'], ['b', 0, 'Blue 1'], ['b', 1, 'Blue 2'], ['b', 2, 'Blue 3']];
   function scoutState() {
-    S.sc = S.sc || { auto: 0, tele: 0, counted: true, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '', paths: [], markers: [], hist: [], tool: 'draw', linkFrom: null };
+    S.sc = S.sc || { auto: 0, tele: 0, counted: true, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '', paths: [], markers: [], pauses: [], slows: [], hist: [], tool: 'draw', linkFrom: null };
     return S.sc;
   }
   function scoutRow(matchKey, team) {
@@ -1133,7 +1137,9 @@
       auto: row ? row.values[SCOUT_AUTO] || 0 : 0, tele: row && row.values[SCOUT_FUEL] != null ? row.values[SCOUT_FUEL] - (row.values[SCOUT_AUTO] || 0) : 0,
       def: row ? row.values[SCOUT_DEF] || 0 : 0, note: row ? row.note || '' : '',
       status: iss ? iss.type : 'ok', when: (iss && iss.when) || 'teleop', what: (iss && iss.what) || 'drivetrain', loadedFor: m && m.key + '|' + t,
-      paths: Paths.strokesOf(row), markers: row && row.markers ? row.markers.map(k => Object.assign({ p: 0 }, k)) : [], hist: [], tool: 'draw', linkFrom: null });
+      paths: Paths.strokesOf(row), markers: row && row.markers ? row.markers.map(k => Object.assign({ p: 0 }, k)) : [],
+      pauses: row && row.pauses ? row.pauses.map(k => Object.assign({}, k)) : [], slows: row && row.slows ? row.slows.map(r => ({ a: Object.assign({}, r.a), b: Object.assign({}, r.b), factor: r.factor })) : [],
+      hist: [], tool: 'draw', linkFrom: null });
   }
   function bumpCount(which, d) {
     const st = scoutState();
@@ -1154,7 +1160,8 @@
     // Only record fuel if the scout says they counted it: an uncounted 0 would read as "scored nothing".
     const values = st.counted ? { [SCOUT_FUEL]: st.auto + st.tele, [SCOUT_AUTO]: st.auto, [SCOUT_DEF]: st.def } : { [SCOUT_DEF]: st.def };
     sc.rows.push({ team: t, match: m.key, scout: who, at: Date.now(), note: st.note, values,
-      paths: st.paths.length ? st.paths : undefined, markers: st.paths.length && st.markers.length ? st.markers : undefined });
+      paths: st.paths.length ? st.paths : undefined, markers: st.paths.length && st.markers.length ? st.markers : undefined,
+      pauses: st.paths.length && st.pauses.length ? st.pauses : undefined, slows: st.paths.length && st.slows.length ? st.slows : undefined });
     for (const c of [SCOUT_FUEL, SCOUT_AUTO, SCOUT_DEF]) if (!sc.columns.includes(c)) sc.columns.push(c);
     sc.map[SCOUT_FUEL] = 'fuel'; sc.map[SCOUT_AUTO] = 'autoFuel';
     m.issues = m.issues || {};
@@ -1167,7 +1174,7 @@
     // Next match for this seat.
     const ms = scoutMatches(), i = ms.indexOf(m);
     S.scoutMatch = ms[Math.min(ms.length - 1, i + 1)].key;
-    S.sc = null;
+    S.sc = null; S.anim = null;
     recompute();
     toast(`Saved ${tnum(t)} in ${matchLabel(m)} — ${st.counted ? (st.auto + st.tele) + ' fuel' : 'fuel not counted'}. Now ${matchLabel(ms[Math.min(ms.length - 1, i + 1)])}.`);
   }
@@ -1254,16 +1261,93 @@
             <button class="${st.tool === 'link' ? 'on' : ''}" data-ptool="link" title="Click the end of one piece, then the start of another, to join them">Link ends</button>
             <button class="${st.tool === 'erase' ? 'on' : ''}" data-ptool="erase" title="Click a piece to remove it (and its markers)">Erase piece</button>
           </div>
+          <div class="seg" role="group" aria-label="Optional timing">
+            <button class="${st.tool === 'pause' ? 'on' : ''}" data-ptool="pause" title="Optional: click on the line where the robot stopped">Pause point</button>
+            <button class="${st.tool === 'slow' ? 'on' : ''}" data-ptool="slow" title="Optional: drag along the line where the robot moved slowly">Slow region</button>
+          </div>
           <button class="btn small" data-act="path-undo" ${st.hist.length ? '' : 'disabled'}>Undo</button>
           <button class="btn small danger" data-act="path-clear" ${st.paths.length ? '' : 'disabled'}>Clear all</button>
 
         </div>
-        <p class="help path-help">${{ draw: 'Drag to trace. Lifted too early? Start the next drag near where the line stopped and it continues.', mark: 'Click on a line: the marker snaps onto it and points along the direction of travel.', link: st.linkFrom ? 'Now click the end you want to join it to.' : 'Click near the end of one piece, then near the end of another.', erase: 'Click a piece to remove it.' }[st.tool]} Saved with <b>Save &amp; next</b>.</p>
+        <p class="help path-help">${{ draw: 'Drag to trace. Lifted too early? Start the next drag near where the line stopped and it continues.', mark: 'Click on a line: the marker snaps onto it and points along the direction of travel.', link: st.linkFrom ? 'Now click the end you want to join it to.' : 'Click near the end of one piece, then near the end of another.', erase: 'Click a piece to remove it.', pause: 'Optional. Click on the line where the robot stopped; set how long on the right.', slow: 'Optional. Drag along the line over the stretch where the robot moved slowly.' }[st.tool]} Saved with <b>Save &amp; next</b>.</p>
         <div class="path-layout">
-        <div id="pathPad" class="path-pad ${st.tool}">${fieldSvg([{ strokes: st.paths, markers: st.markers, ends: st.tool === 'link', linkFrom: st.linkFrom }], { numbered: true })}</div>
-        <div class="marker-notes"><div class="ts-label">Marker notes</div>${st.markers.length ? st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="e.g. picked up fuel, got defended"></label>`).join('') : '<p class="help">Use <b>Add marker</b> and click on the line. Each marker gets a note here.</p>'}</div>
+        <div><div id="pathPad" class="path-pad ${st.tool}">${fieldSvg([{ strokes: st.paths, markers: st.markers, pauses: st.pauses, slows: st.slows, ends: st.tool === 'link', linkFrom: st.linkFrom }], { numbered: true })}</div>
+        ${animControls(st)}</div>
+        <div class="marker-notes"><div class="ts-label">Marker notes</div>${st.markers.length ? st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="e.g. picked up fuel, got defended"></label>`).join('') : '<p class="help">Use <b>Add marker</b> and click on the line. Each marker gets a note here.</p>'}
+          ${st.pauses.length ? `<div class="ts-label" style="margin-top:10px">Pause points</div>${st.pauses.map((q, i) => `<label class="mnote"><span class="mnum pause">P${i + 1}</span><input type="number" min="0" step="0.5" data-psec="${i}" value="${q.sec}" style="width:70px"> s <button class="x" data-pdel="${i}" title="Remove">×</button></label>`).join('')}` : ''}
+          ${st.slows.length ? `<div class="ts-label" style="margin-top:10px">Slow regions</div>${st.slows.map((r, i) => `<label class="mnote"><span class="mnum slow">S${i + 1}</span><select data-sfac="${i}">${[[0.5, '½ speed'], [0.25, '¼ speed'], [0.75, '¾ speed']].map(([v, txt]) => `<option value="${v}" ${+r.factor === v ? 'selected' : ''}>${txt}</option>`).join('')}</select> <button class="x" data-sdel="${i}" title="Remove">×</button></label>`).join('')}` : ''}
+        </div>
         </div>
       </div>`;
+  }
+
+  function pathSnapshot(st) { return JSON.stringify({ paths: st.paths, markers: st.markers, pauses: st.pauses, slows: st.slows }); }
+
+  // ---------- Optional route animation ----------
+  // A robot-sized square (35 in, about a robot with bumpers) runs the route at about 4 m/s,
+  // stopping at pause points and slowing through slow regions.
+  const ROBOT_IN = 35, SPEED_MPS = 4;
+  function animTimeline(st) {
+    const F = S.game && S.game.field;
+    const unitsPerM = Paths.FIELD_W / ((F ? F.length : 651.22) * 0.0254);
+    return Paths.timeline(st.paths, st.pauses, st.slows, SPEED_MPS * unitsPerM);
+  }
+  const fmtT = t => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}.${Math.floor((t % 1) * 10)}`;
+  function animControls(st) {
+    if (!st.paths.length) return '';
+    const tl = animTimeline(st), a = S.anim || {};
+    const t = Math.min(a.t || 0, tl.duration);
+    return `<div class="anim">
+      <button class="btn small primary" data-act="anim-play" id="animPlay">${a.playing ? '❚❚ Pause' : '▶ Play'}</button>
+      <button class="btn small" data-act="anim-restart">↺ Restart</button>
+      <select id="animRate" title="Playback speed">${[1, 2, 4].map(r => `<option value="${r}" ${(a.rate || 1) === r ? 'selected' : ''}>${r}×</option>`).join('')}</select>
+      <input type="range" id="animScrub" min="0" max="${tl.duration.toFixed(2)}" step="0.05" value="${t.toFixed(2)}" aria-label="Time along route">
+      <span class="sd" id="animTime">${fmtT(t)} / ${fmtT(tl.duration)}</span>
+      <span class="sd">Robot at ~${SPEED_MPS} m/s${st.pauses.length || st.slows.length ? ', with your pauses and slow regions' : ''}.</span>
+    </div>`;
+  }
+  function animDraw() {
+    const st = scoutState(), a = S.anim, svg = $('#pathPad svg');
+    if (!a || !svg) return;
+    const pos = Paths.positionAt(st.paths, a.tl, a.t);
+    let bot = svg.querySelector('#animBot');
+    if (!bot) {
+      bot = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      bot.setAttribute('id', 'animBot');
+      const F = S.game && S.game.field, k = Paths.FIELD_W / (F ? F.length : 651.22), h = ROBOT_IN * k / 2;
+      bot.innerHTML = `<rect x="${-h}" y="${-h}" width="${2 * h}" height="${2 * h}" rx="4" class="f-bot"/><path d="M${h - 2},0 L${h - 14},-7 L${h - 14},7 Z" class="f-bot-nose"/>`;
+      svg.appendChild(bot);
+    }
+    if (pos) bot.setAttribute('transform', `translate(${pos.x.toFixed(1)},${pos.y.toFixed(1)}) rotate(${(pos.angle * 180 / Math.PI).toFixed(1)})`);
+    const sc = $('#animScrub'), tm = $('#animTime');
+    if (sc) sc.value = a.t.toFixed(2);
+    if (tm) tm.textContent = `${fmtT(a.t)} / ${fmtT(a.tl.duration)}`;
+    const pb = $('#animPlay');
+    if (pb) pb.textContent = a.playing ? '❚❚ Pause' : '▶ Play';
+  }
+  function animStart() {
+    const a = S.anim;
+    a.last = performance.now();
+    cancelAnimationFrame(a.raf);
+    const step = now => {
+      if (!S.anim || !a.playing || S.tab !== 'scout') return;
+      a.t += (now - a.last) / 1000 * a.rate; a.last = now;
+      if (a.t >= a.tl.duration) { a.t = a.tl.duration; a.playing = false; }
+      animDraw();
+      if (a.playing) a.raf = requestAnimationFrame(step);
+    };
+    animDraw();
+    a.raf = requestAnimationFrame(step);
+  }
+  function animToggle() {
+    const st = scoutState();
+    if (!st.paths.length) return;
+    const tl = animTimeline(st);
+    if (!S.anim) S.anim = { t: 0, rate: 1, playing: false };
+    S.anim.tl = tl;
+    if (S.anim.t >= tl.duration) S.anim.t = 0;
+    S.anim.playing = !S.anim.playing;
+    if (S.anim.playing) animStart(); else animDraw();
   }
 
   // Field drawing shared by the Scout tab, team pages and printed reports. Schematic only:
@@ -1353,6 +1437,21 @@
           }
         }
       });
+      // Optional timing: slow regions as a wide translucent band along the line, pauses as stop badges.
+      (it.slows || []).forEach((r, i) => {
+        const p = strokes[r.a.p] || [];
+        if (p.length < 2 || r.b.p !== r.a.p) return;
+        const sub = Paths.subpath(p, Paths.arcAt(p, r.a.seg, r.a.t), Paths.arcAt(p, r.b.seg, r.b.t));
+        g += `<polyline points="${sub.map(q => q.map(v => v.toFixed(1)).join(',')).join(' ')}" class="f-slow"><title>${esc((it.title ? it.title + ' · ' : '') + 'Slow region ' + (i + 1) + ': ' + (r.factor * 100) + '% speed')}</title></polyline>`;
+        if (opts.numbered) { const mid = sub[Math.floor(sub.length / 2)]; g += `<text x="${mid[0].toFixed(1)}" y="${(mid[1] - 14).toFixed(1)}" text-anchor="middle" class="f-slow-lbl">S${i + 1}</text>`; }
+      });
+      (it.pauses || []).forEach((q, i) => {
+        const ps = Paths.pose(strokes[q.p] || [], q.seg, q.t);
+        if (!ps) return;
+        g += `<g transform="translate(${ps.x.toFixed(1)},${ps.y.toFixed(1)})" class="f-pause"><title>${esc((it.title ? it.title + ' · ' : '') + 'Pause ' + (i + 1) + ': ' + q.sec + ' s')}</title>
+          <rect x="-9" y="-9" width="18" height="18" rx="4" class="f-pause-bg"/><rect x="-4.5" y="-5" width="3" height="10" class="f-pause-bar"/><rect x="1.5" y="-5" width="3" height="10" class="f-pause-bar"/>
+          ${opts.numbered ? `<text y="22" text-anchor="middle" class="f-slow-lbl">${q.sec}s</text>` : ''}</g>`;
+      });
       (it.markers || []).forEach((k, i) => {
         const p = strokes[k.p || 0] || [];
         const ps = Paths.pose(p, k.seg, k.t);
@@ -1379,7 +1478,9 @@
     const st = scoutState();
     const toField = e => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x, q.y]; };
     let drawing = null;
-    const snapshot = () => { st.hist.push(JSON.stringify({ paths: st.paths, markers: st.markers })); if (st.hist.length > 50) st.hist.shift(); };
+    const snapshot = () => { st.hist.push(pathSnapshot(st)); if (st.hist.length > 50) st.hist.shift(); };
+    const anchors = () => st.markers.concat(st.pauses, st.slows.flatMap(r => [r.a, r.b]));
+    let slowFrom = null;
     svg.addEventListener('pointerdown', e => {
       e.preventDefault(); // keep the browser from moving focus on click (the note box gets it)
       const [x, y] = toField(e);
@@ -1405,13 +1506,27 @@
         render();
         // Focus the new marker's note once the click has finished, so typing goes straight in.
         setTimeout(() => { const inp = document.querySelector(`[data-mnote="${idx}"]`); if (inp) inp.focus({ preventScroll: true }); }, 0);
+      } else if (st.tool === 'pause') {
+        const hit = Paths.projectAll(st.paths, x, y);
+        if (!hit || hit.dist > Paths.SNAP) { toast('Click on a line to place a pause point.'); return; }
+        snapshot();
+        st.pauses.push({ p: hit.p, seg: hit.seg, t: Math.round(hit.t * 1000) / 1000, sec: 2 });
+        st.pauses.sort((a, b) => a.p - b.p || a.seg + a.t - (b.seg + b.t));
+        render();
+      } else if (st.tool === 'slow') {
+        const hit = Paths.projectAll(st.paths, x, y);
+        if (!hit || hit.dist > Paths.SNAP) { toast('Start the slow region on a line.'); return; }
+        slowFrom = hit; svg.setPointerCapture(e.pointerId);
+        const band = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        band.setAttribute('id', 'liveSlow'); band.setAttribute('class', 'f-slow');
+        svg.appendChild(band);
       } else if (st.tool === 'link') {
         const endHit = Paths.nearestEnd(st.paths, x, y, Paths.SNAP * 1.5);
         if (!endHit) { toast('Click near the end of a piece.'); return; }
         if (!st.linkFrom) { st.linkFrom = endHit; render(); return; }
         if (endHit.p === st.linkFrom.p) { st.linkFrom = endHit; render(); return; }
         snapshot();
-        const res = Paths.linkEnds(st.paths, st.markers, st.linkFrom, endHit);
+        const res = Paths.linkEnds(st.paths, anchors(), st.linkFrom, endHit);
         st.linkFrom = null;
         render();
         if (res.ok) toast('Pieces joined.');
@@ -1420,23 +1535,42 @@
         if (!hit || hit.dist > Paths.SNAP) { toast('Click on a piece to remove it.'); return; }
         snapshot();
         st.paths.splice(hit.p, 1);
-        st.markers = st.markers.filter(k => k.p !== hit.p).map(k => (k.p > hit.p ? Object.assign(k, { p: k.p - 1 }) : k));
+        const shift = k => (k.p > hit.p ? Object.assign(k, { p: k.p - 1 }) : k);
+        st.markers = st.markers.filter(k => k.p !== hit.p).map(shift);
+        st.pauses = st.pauses.filter(k => k.p !== hit.p).map(shift);
+        st.slows = st.slows.filter(r => r.a.p !== hit.p).map(r => { shift(r.a); shift(r.b); return r; });
         render();
       }
     });
     svg.addEventListener('pointermove', e => {
+      if (slowFrom) {
+        const [x, y] = toField(e), path = st.paths[slowFrom.p], h = Paths.project(path, x, y);
+        const sub = Paths.subpath(path, Paths.arcAt(path, slowFrom.seg, slowFrom.t), Paths.arcAt(path, h.seg, h.t));
+        const band = svg.querySelector('#liveSlow');
+        if (band) band.setAttribute('points', sub.map(q => q.join(',')).join(' '));
+        return;
+      }
       if (!drawing) return;
       const [x, y] = toField(e);
       Paths.addPoint(drawing, x, y);
       const live = svg.querySelector('#livePath');
       if (live) live.setAttribute('points', drawing.map(q => q.join(',')).join(' '));
     });
-    const end = () => {
+    const end = e => {
+      if (slowFrom) {
+        const [x, y] = toField(e), path = st.paths[slowFrom.p], h = Paths.project(path, x, y);
+        const len = Math.abs(Paths.arcAt(path, h.seg, h.t) - Paths.arcAt(path, slowFrom.seg, slowFrom.t));
+        if (len >= 12) {
+          snapshot();
+          st.slows.push({ a: { p: slowFrom.p, seg: slowFrom.seg, t: Math.round(slowFrom.t * 1000) / 1000 }, b: { p: slowFrom.p, seg: h.seg, t: Math.round(h.t * 1000) / 1000 }, factor: 0.5 });
+        } else toast('Drag along the line to mark a slow stretch.');
+        slowFrom = null; render(); return;
+      }
       if (!drawing) return;
       const stroke = drawing; drawing = null;
       if (stroke.length < 2) { render(); return; }
       snapshot();
-      const res = Paths.addStroke(st.paths, st.markers, stroke);
+      const res = Paths.addStroke(st.paths, anchors(), stroke);
       render();
       if (res.joined.length) toast('Piece ' + res.joined.join(' and ') + '.');
     };
@@ -1470,7 +1604,7 @@
     if (!rows.length) return '';
     const label = r => { const m = S.event.matches.find(x => x.key === r.match); return m ? matchLabel(m) : r.match; };
     rows.sort((a, b) => Model.matchOrder(S.event.matches.find(x => x.key === a.match) || {}) - Model.matchOrder(S.event.matches.find(x => x.key === b.match) || {}));
-    const items = rows.map(r => ({ strokes: Paths.strokesOf(r), markers: (r.markers || []).map(x => Object.assign({ p: 0 }, x)), title: label(r) + (r.scout ? ' (' + r.scout + ')' : '') }));
+    const items = rows.map(r => ({ strokes: Paths.strokesOf(r), markers: (r.markers || []).map(x => Object.assign({ p: 0 }, x)), pauses: r.pauses || [], slows: r.slows || [], title: label(r) + (r.scout ? ' (' + r.scout + ')' : '') }));
     const notes = rows.flatMap((r, n) => (r.markers || []).filter(x => x.note).map(x => `<li><span class="sw" style="background:${PATH_COLORS[n % PATH_COLORS.length]}"></span>${esc(label(r))}: ${esc(x.note)}</li>`)).join('');
     return `${print ? '<h4>Traced paths</h4>' : '<h3 style="margin-top:12px">Traced paths</h3>'}
       <div class="path-mini">${fieldSvg(items)}</div>
@@ -1831,8 +1965,10 @@
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
     'scout-save': () => saveScout(),
-    'path-undo': () => { const st = scoutState(); const h = st.hist.pop(); if (h) { const v = JSON.parse(h); st.paths = v.paths; st.markers = v.markers; st.linkFrom = null; } render(); },
-    'path-clear': () => { const st = scoutState(); st.hist.push(JSON.stringify({ paths: st.paths, markers: st.markers })); st.paths = []; st.markers = []; st.linkFrom = null; render(); },
+    'path-undo': () => { const st = scoutState(); const h = st.hist.pop(); if (h) { const v = JSON.parse(h); Object.assign(st, { paths: v.paths, markers: v.markers, pauses: v.pauses || [], slows: v.slows || [], linkFrom: null }); } render(); },
+    'path-clear': () => { const st = scoutState(); st.hist.push(pathSnapshot(st)); Object.assign(st, { paths: [], markers: [], pauses: [], slows: [], linkFrom: null }); render(); },
+    'anim-play': () => animToggle(),
+    'anim-restart': () => { const a = S.anim; if (a) { a.t = 0; a.playing = true; animStart(); } else animToggle(); },
     'print-team': el => printHtml(teamReportHtml(el.dataset.key)),
     'print-match': el => { const m = S.event.matches.find(x => x.key === el.dataset.key); if (m) printHtml(matchSheetHtml(m)); },
     'print-picks': () => printHtml(pickListHtml()),
@@ -1866,6 +2002,8 @@
 
   // ---------- events ----------
   document.addEventListener('click', e => {
+    const del = e.target.closest('[data-pdel],[data-sdel]');
+    if (del) { const st = scoutState(); st.hist.push(pathSnapshot(st)); if (del.dataset.pdel != null) st.pauses.splice(+del.dataset.pdel, 1); else st.slows.splice(+del.dataset.sdel, 1); render(); return; }
     const pt = e.target.closest('[data-ptool]');
     if (pt) { const st = scoutState(); st.tool = pt.dataset.ptool; st.linkFrom = null; render(); return; }
     const bump = e.target.closest('[data-bump]');
@@ -1916,7 +2054,9 @@
     if (el.dataset.pick) { S.event.picked = S.event.picked || {}; S.event.picked[el.dataset.pick] = el.checked; persist(); render(); return; }
     if (el.id === 'scoutName') { S.settings.scoutName = el.value.trim(); Store.saveSettings(S.settings); S.sc = null; render(); return; }
     if (el.id === 'scoutSeat') { S.settings.scoutSeat = el.value; Store.saveSettings(S.settings); S.sc = null; S.scoutMatch = null; render(); return; }
-    if (el.id === 'scoutMatch') { S.scoutMatch = el.value; S.sc = null; render(); return; }
+    if (el.id === 'scoutMatch') { S.scoutMatch = el.value; S.sc = null; S.anim = null; render(); return; }
+    if (el.dataset.sfac != null) { const r = scoutState().slows[+el.dataset.sfac]; if (r) { r.factor = +el.value; render(); } return; }
+    if (el.id === 'animRate') { if (!S.anim) S.anim = { t: 0, rate: 1, playing: false, tl: animTimeline(scoutState()) }; S.anim.rate = +el.value; return; }
     if (el.id === 'scCounted') { scoutState().counted = el.checked; return; }
     if (el.id === 'scStatus') { scoutState().status = el.value; const b = $('#scBroke'); if (b) b.hidden = el.value !== 'broke'; return; }
     if (el.id === 'scWhen') { scoutState().when = el.value; return; }
@@ -1976,6 +2116,8 @@
     }
     if (el.classList.contains('pt')) { updatePrediction(); return; }
     if (el.id === 'scNote') { scoutState().note = el.value; return; }
+    if (el.dataset.psec != null) { const q = scoutState().pauses[+el.dataset.psec]; if (q) { q.sec = Math.max(0, +el.value || 0); if (S.anim) S.anim.tl = animTimeline(scoutState()); } return; }
+    if (el.id === 'animScrub') { const st = scoutState(); if (!S.anim) S.anim = { t: 0, rate: 1, playing: false, tl: animTimeline(st) }; S.anim.t = +el.value; animDraw(); return; }
     if (el.dataset.mnote != null) { const k = scoutState().markers[+el.dataset.mnote]; if (k) k.note = el.value; return; }
     if (el.id === 'evSearch') { S.evQuery = el.value; refreshEventResults(); return; }
     if (el.dataset.teamNotes) {

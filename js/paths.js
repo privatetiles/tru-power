@@ -118,6 +118,89 @@
     return { ok: true, index: link(strokes, markers, a.p, b.p) };
   }
 
+  // ---------- Timing (optional animation) ----------
+  // Distance along a stroke ("arc length", in field units) for each point.
+  function cumulative(path) {
+    const c = [0];
+    for (let i = 1; i < path.length; i++) c.push(c[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+    return c;
+  }
+  function arcAt(path, seg, t) {
+    const c = cumulative(path), i = Math.max(0, Math.min(path.length - 2, seg));
+    return c[i] + t * (c[i + 1] - c[i]);
+  }
+  // Point and direction at distance s along a stroke.
+  function poseAtArc(path, s, cum) {
+    const c = cum || cumulative(path), L = c[c.length - 1];
+    s = Math.max(0, Math.min(L, s));
+    let lo = 0, hi = path.length - 2;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (c[mid] <= s) lo = mid; else hi = mid - 1; }
+    const segLen = c[lo + 1] - c[lo];
+    return pose(path, lo, segLen > 0 ? (s - c[lo]) / segLen : 0);
+  }
+
+  // Build a timeline for the whole route: pieces in order, each traversed at `speed` (field
+  // units per second) except inside slow regions (speed × factor), with optional pauses
+  // (seconds) at points. Pieces that aren't linked are played one after another.
+  // pauses: [{p, seg, t, sec}], slows: [{a: {p, seg, t}, b: {p, seg, t}, factor}].
+  function timeline(strokes, pauses, slows, speed, ds) {
+    ds = ds || 2;
+    const frames = [];
+    let time = 0;
+    strokes.forEach((path, p) => {
+      if (path.length < 2) return;
+      const c = cumulative(path), L = c[c.length - 1];
+      const ps = (pauses || []).filter(q => q.p === p).map(q => ({ s: arcAt(path, q.seg, q.t), sec: Math.max(0, +q.sec || 0) })).sort((x, y) => x.s - y.s);
+      const rs = (slows || []).filter(r => r.a.p === p && r.b.p === p).map(r => {
+        const s0 = arcAt(path, r.a.seg, r.a.t), s1 = arcAt(path, r.b.seg, r.b.t);
+        return { lo: Math.min(s0, s1), hi: Math.max(s0, s1), f: Math.max(0.05, Math.min(1, +r.factor || 1)) };
+      });
+      const factorAt = s => rs.reduce((f, r) => (s >= r.lo && s < r.hi ? Math.min(f, r.f) : f), 1);
+      // Break points: regular steps, plus every pause and slow-region edge, so time is exact.
+      const cuts = new Set([0, L]);
+      for (let x = ds; x < L; x += ds) cuts.add(x);
+      ps.forEach(q => cuts.add(q.s));
+      rs.forEach(r => { cuts.add(Math.max(0, Math.min(L, r.lo))); cuts.add(Math.max(0, Math.min(L, r.hi))); });
+      const pts = [...cuts].sort((x, y) => x - y);
+      let k = 0;
+      frames.push({ t: time, p, s: 0 });
+      const hold = s => { while (k < ps.length && ps[k].s <= s + 1e-9) { if (ps[k].sec > 0) { time += ps[k].sec; frames.push({ t: time, p, s }); } k++; } };
+      hold(0);
+      for (let i = 1; i < pts.length; i++) {
+        const a = pts[i - 1], b = pts[i];
+        time += (b - a) / (speed * factorAt((a + b) / 2));
+        frames.push({ t: time, p, s: b });
+        hold(b);
+      }
+    });
+    return { frames, duration: time };
+  }
+
+  // Where the robot is at time t: {p, x, y, angle}.
+  function positionAt(strokes, tl, t) {
+    const f = tl.frames;
+    if (!f.length) return null;
+    t = Math.max(0, Math.min(tl.duration, t));
+    let lo = 0, hi = f.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (f[mid].t <= t) lo = mid; else hi = mid - 1; }
+    const A = f[lo], B = f[Math.min(f.length - 1, lo + 1)];
+    let s = A.s;
+    if (B.p === A.p && B.t > A.t) s = A.s + (B.s - A.s) * (t - A.t) / (B.t - A.t);
+    const ps = poseAtArc(strokes[A.p], s);
+    return ps && Object.assign(ps, { p: A.p });
+  }
+
+  // Part of a stroke between two arc lengths, as points (for drawing a slow region).
+  function subpath(path, s0, s1) {
+    const c = cumulative(path);
+    const lo = Math.min(s0, s1), hi = Math.max(s0, s1);
+    const out = [];
+    const a = poseAtArc(path, lo, c); out.push([a.x, a.y]);
+    for (let i = 0; i < path.length; i++) if (c[i] > lo && c[i] < hi) out.push(path[i]);
+    const b = poseAtArc(path, hi, c); out.push([b.x, b.y]);
+    return out;
+  }
+
   // Older saved entries had a single path; newer ones have strokes.
   function strokesOf(row) {
     if (!row) return [];
@@ -126,7 +209,8 @@
     return [];
   }
 
-  const api = { FIELD_W, FIELD_H, configure, SNAP, JOIN, addPoint, project, projectAll, pose, nearestEnd, link, reverse, addStroke, linkEnds, strokesOf };
+  const api = { FIELD_W, FIELD_H, configure, SNAP, JOIN, addPoint, project, projectAll, pose, nearestEnd, link, reverse, addStroke, linkEnds, strokesOf,
+    cumulative, arcAt, poseAtArc, timeline, positionAt, subpath };
   root.Paths = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

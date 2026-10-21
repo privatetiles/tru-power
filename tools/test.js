@@ -202,6 +202,40 @@ for (const s of st.slice(0, 8)) {
   console.log('multi-stroke paths: auto-continue, separate pieces, link (with reversal) keep every marker exactly in place');
 }
 
+// Path animation timing: constant speed, plus optional pauses and slow regions.
+{
+  const P = require('../js/paths.js');
+  const line = [[0, 0], [100, 0], [100, 100]];            // 200 units long
+  const v = 50;
+  const plain = P.timeline([line], [], [], v);
+  assert(Math.abs(plain.duration - 4) < 1e-9, 'constant speed: 200 units at 50/s = 4 s');
+  const withPause = P.timeline([line], [{ p: 0, seg: 0, t: 0.5, sec: 3 }], [], v);
+  assert(Math.abs(withPause.duration - 7) < 1e-9, 'a 3 s pause adds exactly 3 s');
+  const slow = P.timeline([line], [], [{ a: { p: 0, seg: 1, t: 0 }, b: { p: 0, seg: 1, t: 1 }, factor: 0.5 }], v);
+  assert(Math.abs(slow.duration - 6) < 1e-9, 'half speed over the second 100 units adds 2 s');
+  // During the pause the robot stays put at the pause point.
+  const at = P.positionAt([line], withPause, 1 + 1.5);
+  assert(Math.abs(at.x - 50) < 1e-9 && Math.abs(at.y) < 1e-9, 'robot holds position during a pause');
+  // Position always lies on the path and moves forward.
+  let prev = -1;
+  for (let t = 0; t <= slow.duration; t += 0.05) {
+    const q = P.positionAt([line], slow, t), s = P.arcAt(line, P.project(line, q.x, q.y).seg, P.project(line, q.x, q.y).t);
+    assert(P.project(line, q.x, q.y).dist < 1e-9 && s >= prev - 1e-9, 'robot stays on the line and never moves backwards');
+    prev = s;
+  }
+  // Two separate pieces play one after the other.
+  const two = P.timeline([line, [[300, 300], [350, 300]]], [], [], v);
+  assert(Math.abs(two.duration - 5) < 1e-9, 'separate pieces play in sequence');
+  // Linking pieces keeps pause and slow-region anchors exactly in place (they are anchors like markers).
+  const strokes = [[[0, 0], [100, 0]], [[200, 0], [300, 0]]];
+  const pause = { p: 1, seg: 0, t: 0.5, sec: 2 }, reg = { a: { p: 1, seg: 0, t: 0.2 }, b: { p: 1, seg: 0, t: 0.8 }, factor: 0.5 };
+  const before = [P.pose(strokes[1], 0, 0.5), P.pose(strokes[1], 0, 0.2), P.pose(strokes[1], 0, 0.8)];
+  P.link(strokes, [pause, reg.a, reg.b], 0, 1);
+  const after = [P.pose(strokes[pause.p], pause.seg, pause.t), P.pose(strokes[reg.a.p], reg.a.seg, reg.a.t), P.pose(strokes[reg.b.p], reg.b.seg, reg.b.t)];
+  assert(before.every((q, i) => Math.hypot(q.x - after[i].x, q.y - after[i].y) < 1e-9), 'linking keeps pauses and slow regions in place');
+  console.log('path animation timing: speed, pauses, slow regions, sequencing and linking all exact');
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };
