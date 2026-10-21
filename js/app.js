@@ -132,7 +132,7 @@
       trueRank: L.trueRank, eRand: L.eRand, luck: L.luck, easePct: L.easePct, adjRS: L.adjRS, tailwind: L.tailwind, perfLuck: L.perfLuck, luckPre: L.luckPre,
       expRank: sim ? sim.expRank : null, p8: sim ? sim.p8 : null, p1: sim ? sim.p1 : null, p4: sim ? sim.p4 : null,
       sim, scout: sc,
-      starred: !!(S.event.starred || {})[k], picked: !!(S.event.picked || {})[k],
+      starred: !!(S.event.starred || {})[k], picked: !!(S.event.picked || {})[k] || allianceOf(k) != null,
       relOn: R.rel.any, relQ: R.rel.any ? R.rel.q[i] : null, relFactor: R.rel.any ? R.rel.factor[i] : 1,
       // Expected points it actually delivers: working strength × reliability, minus fouls given away.
       pickScore: get('total') != null ? get('total') * (R.rel.any ? R.rel.factor[i] : 1) - Math.max(0, get('fouls') || 0) : null,
@@ -165,7 +165,7 @@
     renderEventSelect();
     renderStatus();
     if (!S.event && S.tab !== 'data') { main.innerHTML = emptyState(); return; }
-    const fn = { overview: renderOverview, teams: renderTeams, picks: renderPicks, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
+    const fn = { overview: renderOverview, teams: renderTeams, picks: renderPicks, alliances: renderAlliances, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
     main.innerHTML = fn();
     if (S.tab === 'predict') updatePrediction();
     if (S.tab === 'data') loadCatalogueAndShow(false);
@@ -407,6 +407,145 @@
         ${relOn ? 'Reliability comes from problems marked in the match editor, blended with the event average so one bad match doesn\'t sink a team.' : '<b>No breakdowns recorded yet</b> — mark robots as Broke / No-show in the match editor and reliability will start counting.'}
         Tick <b>Picked</b> during alliance selection and the list re-ranks what's left.${ot ? ` Your team (${esc(tnum(ot))}) is left out.` : ''}</p>
       ${table('picks', cols, rows, { rowClass: r => (r.picked ? 'picked' : '') })}`;
+  }
+
+  // ----- Alliance selection -----
+  // event.alliances = { n, picks: [[pick1, pick2], ...] }. Captains are never stored:
+  // they are recomputed from the rankings, the way FRC seats them. Alliance k's captain
+  // is the best-ranked team not already a captain or taken by an earlier alliance's
+  // first-round pick (round-2 picks happen after every captain is seated).
+  function allianceState() {
+    const ev = S.event;
+    const a = ev.alliances = ev.alliances || { n: Math.min(8, Math.floor(ev.teams.length / 3)) || 1, picks: [] };
+    while (a.picks.length < a.n) a.picks.push([null, null]);
+    a.picks.length = a.n;
+    return a;
+  }
+
+  // Seeding order used for captains: current rank, then (for teams without one) true rank.
+  function seedOrder() {
+    const ranked = S.st.filter(s => s.rank).map(s => s.team);
+    const rest = S.R.teams.filter(t => !ranked.includes(t)).sort((x, y) => (S.luck[x] ? S.luck[x].trueRank : 999) - (S.luck[y] ? S.luck[y].trueRank : 999));
+    return ranked.concat(rest);
+  }
+
+  function computeCaptains(a) {
+    const order = seedOrder();
+    const used = new Set(), captains = [];
+    for (let k = 0; k < a.n; k++) {
+      captains[k] = order.find(t => !used.has(t)) || null;
+      if (captains[k]) used.add(captains[k]);
+      const p1 = a.picks[k][0];
+      if (p1) used.add(p1);
+    }
+    return captains;
+  }
+
+  // Where a team sits on the board: {k, slot: 'cap'|0|1} or null.
+  function allianceOf(t) {
+    const a = S.event && S.event.alliances;
+    if (!a || !a.picks) return null;
+    for (let k = 0; k < a.picks.length; k++) for (let j = 0; j < 2; j++) if (a.picks[k][j] === t) return { k, slot: j };
+    return null;
+  }
+
+  // After any change, picks that became captains (or duplicate captains) go back to the pool.
+  function normalizeAlliances(a) {
+    const bumped = [];
+    for (let guard = 0; guard < 20; guard++) {
+      const caps = computeCaptains(a);
+      let changed = false;
+      for (let k = 0; k < a.n && !changed; k++) for (let j = 0; j < 2 && !changed; j++) {
+        const t = a.picks[k][j];
+        if (!t) continue;
+        const ci = caps.indexOf(t);
+        // A captain can only be taken as a first-round pick by an earlier alliance.
+        if (ci >= 0 && !(j === 0 && k < ci)) { a.picks[k][j] = null; bumped.push(t); changed = true; }
+      }
+      if (!changed) break;
+    }
+    return bumped;
+  }
+
+  function placeTeam(t, k, j) {
+    const a = allianceState();
+    const caps = computeCaptains(a);
+    const ci = caps.indexOf(t);
+    if (ci >= 0 && !(j === 0 && k < ci)) {
+      toast(ci === 0 ? `${tnum(t)} is the #1 seed — Alliance 1's captain can't be picked.`
+        : `${tnum(t)} is Alliance ${ci + 1}'s captain: only an earlier alliance's first pick can take them.`, 4000);
+      return;
+    }
+    const from = allianceOf(t);
+    if (from) a.picks[from.k][from.slot] = null;
+    a.picks[k][j] = t;
+    const bumped = normalizeAlliances(a);
+    if (bumped.length) toast(`${bumped.map(tnum).join(', ')} became a captain and went back to the available list.`, 4500);
+    persist(); render();
+  }
+
+  function removeTeam(t) {
+    const a = allianceState(), from = allianceOf(t);
+    if (from) a.picks[from.k][from.slot] = null;
+    normalizeAlliances(a);
+    persist(); render();
+  }
+
+  // Next slot in official snake order: round 1 A1→A8, round 2 A8→A1.
+  function nextSlot(a) {
+    for (let k = 0; k < a.n; k++) if (!a.picks[k][0]) return { k, j: 0 };
+    for (let k = a.n - 1; k >= 0; k--) if (!a.picks[k][1]) return { k, j: 1 };
+    return null;
+  }
+
+  function renderAlliances() {
+    const a = allianceState();
+    const caps = computeCaptains(a);
+    const rows = Object.fromEntries(S.R.teams.map(t => [t, teamRow(t)]));
+    const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
+    const next = nextSlot(a);
+    const chip = (t, opts = {}) => {
+      const r = rows[t];
+      if (!t || !r) return '';
+      return `<div class="chip ${ours(t) ? 'ours' : ''}" draggable="true" data-drag="${esc(t)}" title="${esc(r.name)} — drag to move">
+        ${teamLink(t)}${opts.captain ? ' <span class="pill good">captain</span>' : ''}
+        <span class="sd">${f1(r.pickScore)}</span>${r.relQ != null && r.relQ > 0.1 ? ` <span class="pill bad" title="${esc(r.problemText)}">${pct(1 - r.relQ)}</span>` : ''}
+        ${opts.removable ? `<button class="x" data-unpick="${esc(t)}" title="Back to available">×</button>` : ''}</div>`;
+    };
+    // Alliance strength = expected points per match from its three robots (reliability included).
+    const strength = k => {
+      const ts = [caps[k]].concat(a.picks[k]).filter(Boolean);
+      return ts.length ? Model.allianceDist(S.R, ts, 'total').mu : null;
+    };
+    const strengths = Array.from({ length: a.n }, (_, k) => strength(k));
+    const order = strengths.map((v, k) => [v, k]).filter(x => x[0] != null).sort((x, y) => y[0] - x[0]).map(x => x[1]);
+    const cards = Array.from({ length: a.n }, (_, k) => {
+      const slot = j => {
+        const t = a.picks[k][j];
+        const isNext = next && next.k === k && next.j === j;
+        return `<div class="slot ${isNext ? 'next' : ''}" data-slot="${k}:${j}">${t ? chip(t, { removable: true }) : `<span class="sd">${j === 0 ? '1st' : '2nd'} pick${isNext ? ' — next' : ''}</span>`}</div>`;
+      };
+      const sv = strengths[k];
+      return `<div class="card alliance-card ${caps[k] && ours(caps[k]) || a.picks[k].some(ours) ? 'hl' : ''}">
+        <h3>Alliance ${k + 1}${sv != null ? ` <span class="sd" style="text-transform:none;letter-spacing:0">· ${f1(sv, 0)} pts · #${order.indexOf(k) + 1} strongest</span>` : ''}</h3>
+        <div class="slot cap" data-slot="${k}:cap">${caps[k] ? chip(caps[k], { captain: true }) : '<span class="sd">—</span>'}</div>
+        ${slot(0)}${slot(1)}</div>`;
+    }).join('');
+    const placed = new Set(caps.filter(Boolean).concat(a.picks.flat().filter(Boolean)));
+    const pool = S.R.teams.filter(t => !placed.has(t)).map(t => rows[t]).filter(r => r.tp != null).sort((x, y) => y.pickScore - x.pickScore);
+    return `<div class="toolbar">
+        <label>Alliances <select id="nAlliances">${[2, 3, 4, 5, 6, 7, 8].map(n => `<option ${a.n === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+        <span class="help">${next ? `Next pick: <b>Alliance ${next.k + 1}, ${next.j === 0 ? '1st' : '2nd'} pick</b> (snake order)` : 'All alliances are full.'}</span>
+        <span class="spacer"></span>
+        <button class="btn small danger" data-act="reset-alliances">Reset picks</button>
+      </div>
+      <p class="help">Captains fill in automatically from the current rankings. When a captain-to-be is picked, everyone moves up and the next team becomes a captain. Drag teams onto a pick slot, between slots, or back to the list. A lower alliance's captain can be dragged onto an earlier alliance's 1st pick. <b>Pick ▸</b> fills the next slot in order. Strength = expected points per match of the three robots.</p>
+      <div class="sel-layout">
+        <div class="alliance-grid">${cards}</div>
+        <div class="card pool" data-slot="pool"><h3>Available · best first</h3>
+          ${pool.map(r => `<div class="pool-row">${chip(r.key)}<span class="sd">TP ${f1(r.tp)} · rank ${r.rank || '–'}</span>${next ? `<button class="btn small" data-pickteam="${esc(r.key)}">Pick ▸</button>` : ''}</div>`).join('') || '<p class="help">Everyone is on an alliance.</p>'}
+        </div>
+      </div>`;
   }
 
   // ----- Schedule luck -----
@@ -1092,6 +1231,10 @@
       S.event.matches = S.event.matches.filter(x => x.key !== el.dataset.key); persist(); closeModal(); recompute();
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
+    'reset-alliances': el => {
+      if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to reset'; return; }
+      const a = allianceState(); a.picks = []; allianceState(); persist(); render();
+    },
     'export-csv': exportCSV,
     'export-event': () => Store.download(`${S.event.key}-trupower.json`, { trupower: 'event', exported: Date.now(), event: S.event }),
     'export-all': () => Store.download(`trupower-backup-${new Date().toISOString().slice(0, 10)}.json`, { trupower: 'all', exported: Date.now(), events: Store.listEvents().map(e => Store.loadEvent(e.key)).filter(Boolean) }),
@@ -1118,6 +1261,12 @@
 
   // ---------- events ----------
   document.addEventListener('click', e => {
+    const pk = e.target.closest('[data-pickteam],[data-unpick]');
+    if (pk) {
+      if (pk.dataset.unpick) removeTeam(pk.dataset.unpick);
+      else { const n = nextSlot(allianceState()); if (n) placeTeam(pk.dataset.pickteam, n.k, n.j); }
+      return;
+    }
     const el = e.target.closest('[data-act],[data-team],[data-match],[data-sort],[data-star],[data-open],[data-del],[data-close],#tabs button');
     if (!el) { if (e.target.id === 'modal') closeModal(); return; }
     if (el.matches('#tabs button')) { S.tab = el.dataset.tab; render(); return; }
@@ -1154,6 +1303,7 @@
     const el = e.target;
     if (el.id === 'eventSelect' && el.value) { setEvent(Store.loadEvent(el.value)); return; }
     if (el.dataset.pick) { S.event.picked = S.event.picked || {}; S.event.picked[el.dataset.pick] = el.checked; persist(); render(); return; }
+    if (el.id === 'nAlliances') { const a = allianceState(); a.n = +el.value; allianceState(); normalizeAlliances(a); persist(); render(); return; }
     if (el.id === 'hidePicked') { S.hidePicked = el.checked; render(); return; }
     if (el.id === 'matchFilter') { S.matchFilter = el.value; render(); return; }
     if (el.id === 'nSims') { S.settings.nSims = +el.value; Store.saveSettings(S.settings); S.sim = null; render(); scheduleSim(); return; }
@@ -1216,10 +1366,41 @@
       return;
     }
     const typing = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
-    if (!typing && $('#modal').hidden && /^[1-8]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
-      S.tab = ['overview', 'teams', 'picks', 'luck', 'matches', 'forecast', 'predict', 'data'][+e.key - 1];
+    if (!typing && $('#modal').hidden && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+      S.tab = ['overview', 'teams', 'picks', 'alliances', 'luck', 'matches', 'forecast', 'predict', 'data'][+e.key - 1];
       render();
     }
+  });
+
+  // ---------- drag & drop (alliance selection) ----------
+  document.addEventListener('dragstart', e => {
+    const d = e.target.closest && e.target.closest('[data-drag]');
+    if (!d) return;
+    e.dataTransfer.setData('text/plain', d.dataset.drag);
+    e.dataTransfer.effectAllowed = 'move';
+    d.classList.add('dragging');
+  });
+  document.addEventListener('dragend', e => { const d = e.target.closest && e.target.closest('[data-drag]'); if (d) d.classList.remove('dragging'); });
+  document.addEventListener('dragover', e => {
+    const s = e.target.closest && e.target.closest('[data-slot]');
+    if (!s) return;
+    e.preventDefault();
+    document.querySelectorAll('.slot.over,.pool.over').forEach(x => x !== s && x.classList.remove('over'));
+    s.classList.add('over');
+  });
+  document.addEventListener('dragleave', e => { const s = e.target.closest && e.target.closest('[data-slot]'); if (s && !s.contains(e.relatedTarget)) s.classList.remove('over'); });
+  document.addEventListener('drop', e => {
+    const s = e.target.closest && e.target.closest('[data-slot]');
+    if (!s) return;
+    e.preventDefault();
+    s.classList.remove('over');
+    const t = e.dataTransfer.getData('text/plain');
+    if (!t) return;
+    const where = s.dataset.slot;
+    if (where === 'pool') { removeTeam(t); return; }
+    const [k, j] = where.split(':');
+    if (j === 'cap') { toast('Captains are set by the rankings — drag a team onto a pick slot instead.'); return; }
+    placeTeam(t, +k, +j);
   });
 
   window.addEventListener('online', () => { renderStatus(); autoSyncTick(true); });

@@ -28,7 +28,7 @@
 
 If you have no internet at all, use **Data → Create event manually**. Then paste the schedule in the Matches tab (`Q1 254 1678 971 118 148 1323` per line).
 
-**Keyboard:** keys `1`–`8` switch tabs; `Esc` closes a popup; `Enter` saves a match.
+**Keyboard:** keys `1`–`9` switch tabs; `Esc` closes a popup; `Enter` saves a match.
 
 ## What the numbers mean
 
@@ -156,4 +156,10 @@ Until then, any other year falls back to a generic model that uses total score p
   - Breakdowns show as ⚠ in the match list, in the Teams table's **Problems** column, and on each team's page. They survive TBA refreshes.
   - **Reliability in predictions:** each team gets a breakdown chance from its recorded problems, blended with the event average as if from 6 matches. Predictions, the ranking forecast and schedule luck all account for it; switch it off in Data → Settings. With nothing recorded it changes nothing.
 - **Best Picks tab:** teams ranked by **Pick score**, the points per match you can count on (True Potential × reliability − fouls given away). Tick *Picked* during alliance selection and the list re-ranks what's left; your own team is left out.
+- **Alliance Selection tab:**
+  - Captains fill in from the rankings and move up automatically when a would-be captain is picked. If Alliance 1 picks the #2 seed, #3 becomes Alliance 2's captain and so on, down to #9 captaining Alliance 8.
+  - Drag teams onto pick slots, between slots, or back to the available list. **Pick ▸** fills the next slot in snake order.
+  - Illegal picks are refused, e.g. Alliance 1's captain or a later pick of a seated captain.
+  - Each alliance shows its expected points per match, and placed teams are marked as picked on Best Picks.
+  - Declines aren't modelled: if a team declines, simply don't place it.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.

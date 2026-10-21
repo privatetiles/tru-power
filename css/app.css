@@ -182,3 +182,19 @@ input.invalid { border-color: var(--bad); background: var(--bad-soft); }
 select.status-broke, select.status-noshow { border-color: var(--bad); color: var(--bad); font-weight: 600; }
 .warn { color: var(--bad); font-size: 11px; vertical-align: super; margin-left: 1px; }
 .robots .problem[hidden] { display: none; }
+/* Alliance selection */
+.sel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+@media (max-width: 1000px) { .sel-layout { grid-template-columns: 1fr; } }
+.alliance-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.alliance-card h3 { margin-bottom: 8px; }
+.slot { min-height: 38px; border: 1px dashed var(--line); border-radius: 8px; padding: 4px 6px; margin: 5px 0; display: flex; align-items: center; }
+.slot.cap { border-style: solid; background: var(--good-soft); }
+.slot.next { border-color: var(--accent); background: var(--accent-soft); }
+.slot.over, .pool.over { outline: 2px solid var(--accent); background: var(--accent-soft); }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; background: var(--panel); border: 1px solid var(--line); cursor: grab; user-select: none; }
+.chip.ours { background: var(--ours); }
+.chip.dragging { opacity: .4; }
+.chip .x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 15px; padding: 0 0 0 4px; }
+.pool { position: sticky; top: 100px; max-height: calc(100vh - 120px); overflow-y: auto; }
+.pool-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.pool-row .btn { margin-left: auto; }
