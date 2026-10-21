@@ -9,7 +9,7 @@
     event: null, game: null,
     R: null, Rprior: null, st: null, stBy: {}, luck: null, sim: null, simBusy: false,
     tab: 'overview',
-    sort: { teams: ['tp', -1], luck: ['luck', 1], forecast: ['expRank', 1] },
+    sort: { teams: ['tp', -1], picks: ['pickScore', -1], luck: ['luck', 1], forecast: ['expRank', 1] },
     filter: '', hidePicked: false, matchFilter: 'all',
     accuracy: null,
   };
@@ -133,6 +133,9 @@
       expRank: sim ? sim.expRank : null, p8: sim ? sim.p8 : null, p1: sim ? sim.p1 : null, p4: sim ? sim.p4 : null,
       sim, scout: sc,
       starred: !!(S.event.starred || {})[k], picked: !!(S.event.picked || {})[k],
+      relOn: R.rel.any, relQ: R.rel.any ? R.rel.q[i] : null, relFactor: R.rel.any ? R.rel.factor[i] : 1,
+      // Expected points it actually delivers: working strength × reliability, minus fouls given away.
+      pickScore: get('total') != null ? get('total') * (R.rel.any ? R.rel.factor[i] : 1) - Math.max(0, get('fouls') || 0) : null,
       ...(() => { const rel = reliability(k); return { played: rel.played, problems: rel.list.length, problemText: rel.list.map(x => `${matchLabel(x.m)} ${issueText(x.iss)}${x.iss.note ? ' (' + x.iss.note + ')' : ''}`).join('; ') }; })(),
     };
   }
@@ -162,7 +165,7 @@
     renderEventSelect();
     renderStatus();
     if (!S.event && S.tab !== 'data') { main.innerHTML = emptyState(); return; }
-    const fn = { overview: renderOverview, teams: renderTeams, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
+    const fn = { overview: renderOverview, teams: renderTeams, picks: renderPicks, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
     main.innerHTML = fn();
     if (S.tab === 'predict') updatePrediction();
     if (S.tab === 'data') loadCatalogueAndShow(false);
@@ -291,7 +294,7 @@
   // ----- sortable table -----
   function table(id, cols, rows, opts = {}) {
     let [sk, dir] = S.sort[id] || [];
-    if (!cols.some(c => c.key === sk && !c.nosort)) { [sk, dir] = { teams: ['tp', -1], luck: ['luck', 1], forecast: ['expRank', 1] }[id] || []; }
+    if (!cols.some(c => c.key === sk && !c.nosort)) { [sk, dir] = { teams: ['tp', -1], picks: ['pickScore', -1], luck: ['luck', 1], forecast: ['expRank', 1] }[id] || []; }
     const col = cols.find(c => c.key === sk);
     if (col) {
       const get = col.sortVal || (r => r[col.key]);
@@ -353,6 +356,57 @@
       </div>
       <p class="help"><b>True Potential</b> = points a robot adds to its alliance per match (fouls excluded), solved jointly across all matches so strong/weak partners are accounted for, and blended with the team's earlier-event results while data is thin. ± is one standard deviation. Click a team for details; click headers to sort.</p>
       ${table('teams', cols, rows, { rowClass: r => (ours(r.key) ? 'ours ' : '') + (r.picked ? 'picked' : '') })}`;
+  }
+
+  // ----- Best picks -----
+  function renderPicks() {
+    const R = S.R;
+    const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
+    let rows = R.teams.filter(k => k !== ot).map(teamRow).filter(r => r.tp != null);
+    // Pick order among teams still available.
+    const order = rows.filter(r => !r.picked).sort((a, b) => b.pickScore - a.pickScore);
+    const pickNo = Object.fromEntries(order.map((r, i) => [r.key, i + 1]));
+    const q = S.filter.trim().toLowerCase();
+    if (q) rows = rows.filter(r => String(r.num).includes(q) || r.name.toLowerCase().includes(q) || ((S.event.notes || {})[r.key] || '').toLowerCase().includes(q));
+    if (S.hidePicked) rows = rows.filter(r => !r.picked);
+    const has = c => R.comps[c] && R.comps[c].available;
+    const relOn = R.rel.any;
+    const cols = [
+      { key: 'pickNo', label: '#', n: 1, sortVal: r => pickNo[r.key] || 999, fmt: r => (r.picked ? '<span class="sd">—</span>' : `<b>${pickNo[r.key]}</b>`) },
+      { key: 'starred', label: '★', sortVal: r => (r.starred ? 1 : 0), fmt: r => `<a data-star="${r.key}" title="Star">${r.starred ? '★' : '☆'}</a>` },
+      { key: 'num', label: 'Team', fmt: r => teamLink(r.key) },
+      { key: 'name', label: 'Name', cls: 'name', fmt: r => esc(r.name) },
+      { key: 'pickScore', label: 'Pick score', n: 1, title: 'Points per match you can count on: True Potential × reliability, minus foul points given away', fmt: r => `<b>${f1(r.pickScore)}</b>` },
+      { key: 'tp', label: 'When working', n: 1, title: 'True Potential: points added per match when the robot works', fmt: r => `${f1(r.tp)} <span class="sd">±${f1(r.tpSd, 0)}</span>` },
+      { key: 'relQ', label: 'Reliability', n: 1, title: 'Chance of a clean match (no breakdown / no-show), from recorded problems blended with the event average', sortVal: r => (r.relQ == null ? 1 : 1 - r.relQ),
+        fmt: r => (r.relQ == null ? '<span class="sd">—</span>' : `${pct(1 - r.relQ)}<span class="meter"><i style="width:${100 * (1 - r.relQ)}%;${r.relQ > 0.15 ? 'background:var(--bad)' : ''}"></i></span>`) },
+      { key: 'problems', label: 'Problems', n: 1, sortVal: r => r.problems, fmt: r => (r.problems ? `<span class="neg" title="${esc(r.problemText)}">${r.problems}/${r.played}</span>` : `<span class="sd">0/${r.played}</span>`) },
+    ];
+    if (has('auto')) cols.push({ key: 'auto', label: 'Auto', n: 1, fmt: r => f1(r.auto) });
+    if (has('fuel')) cols.push({ key: 'fuel', label: 'Fuel', n: 1, fmt: r => f1(r.fuel) });
+    if (has('tower')) cols.push({ key: 'tower', label: 'Tower', n: 1, fmt: r => f1(r.tower) });
+    if (has('fouls')) cols.push({ key: 'fouls', label: 'Fouls', n: 1, fmt: r => f1(r.fouls) });
+    cols.push(
+      { key: 'rank', label: 'Rank', n: 1, fmt: r => (r.rank || '–') + (r.rank && r.rank <= 8 ? ' <span class="pill muted" title="Currently a top-8 seed: would be an alliance captain">captain</span>' : '') },
+      { key: 'notes', label: 'Notes', nosort: true, fmt: r => { const n = (S.event.notes || {})[r.key]; return n ? `<span class="sd" title="${esc(n)}">${esc(n.slice(0, 24))}${n.length > 24 ? '…' : ''}</span>` : ''; } },
+      { key: 'picked', label: 'Picked', sortVal: r => (r.picked ? 1 : 0), fmt: r => `<input type="checkbox" data-pick="${r.key}" ${r.picked ? 'checked' : ''} title="Mark as picked during alliance selection">` },
+    );
+    const best = order.slice(0, 3);
+    return `<div class="toolbar">
+        <input id="teamFilter" placeholder="Filter team / name / notes" value="${esc(S.filter)}" style="width:240px">
+        <label><input type="checkbox" id="hidePicked" ${S.hidePicked ? 'checked' : ''}> Hide picked</label>
+        <span class="spacer"></span>
+        <button class="btn small" data-act="clear-picked">Clear picks</button>
+      </div>
+      ${best.length ? `<div class="grid cols-3" style="margin-bottom:14px">${best.map((r, i) => `<div class="card ${i === 0 ? 'hl' : ''}">
+        <h3>${['Best available', '2nd', '3rd'][i]}</h3>
+        <div style="font-size:20px">${teamLink(r.key)} <span class="sd">${esc(r.name)}</span></div>
+        <div class="stats" style="margin-top:8px">${statCard('Pick score', f1(r.pickScore))}${statCard('When working', f1(r.tp))}${statCard('Reliability', r.relQ == null ? '—' : pct(1 - r.relQ))}</div>
+        ${r.problems ? `<p class="help neg">${esc(r.problemText)}</p>` : ''}</div>`).join('')}</div>` : ''}
+      <p class="help"><b>Pick score</b> = points per match you can count on: the robot's True Potential, reduced by its chance of breaking down, minus foul points it gives away.
+        ${relOn ? 'Reliability comes from problems marked in the match editor, blended with the event average so one bad match doesn\'t sink a team.' : '<b>No breakdowns recorded yet</b> — mark robots as Broke / No-show in the match editor and reliability will start counting.'}
+        Tick <b>Picked</b> during alliance selection and the list re-ranks what's left.${ot ? ` Your team (${esc(tnum(ot))}) is left out.` : ''}</p>
+      ${table('picks', cols, rows, { rowClass: r => (r.picked ? 'picked' : '') })}`;
   }
 
   // ----- Schedule luck -----
@@ -531,6 +585,7 @@
 
       <div class="card"><h3>Settings</h3>
         <div class="field"><label>Auto-refresh results from TBA when online (every 2 min)</label><input type="checkbox" id="autoSync" ${s.autoSync ? 'checked' : ''}></div>
+        <div class="field"><label>Count recorded breakdowns in predictions &amp; picks</label><input type="checkbox" id="useReliability" ${!(s.model && s.model.useReliability === false) ? 'checked' : ''}></div>
         <div class="field"><label>Our team number</label><input id="ourTeam" value="${esc(tnum(s.ourTeam))}" style="width:100px"></div>
         <div class="field"><label>Bonus RP thresholds (auto-corrected from results after ~3 matches)</label><select id="level">${['regional', 'dcmp', 'cmp'].map(l => `<option value="${l}" ${(ev && ev.level) === l ? 'selected' : ''}>${{ regional: 'Regional / District / Offseason', dcmp: 'District Championship', cmp: 'FIRST Championship' }[l]}</option>`).join('')}</select></div>
         <div class="field"><label>Prior strength (matches-worth of earlier events)</label><input id="lambda" type="number" step="0.5" min="0.5" value="${(s.model && s.model.lambda) || Model.DEFAULT_SETTINGS.lambda}"></div>
@@ -1081,7 +1136,7 @@
     if (el.dataset.sort) {
       const id = el.closest('table').dataset.table;
       const [k, d] = S.sort[id] || [];
-      const lowFirst = ['num', 'rank', 'trueRank', 'expRank', 'fouls', 'gap', 'range', 'name'].includes(el.dataset.sort);
+      const lowFirst = ['num', 'rank', 'trueRank', 'expRank', 'fouls', 'gap', 'range', 'name', 'pickNo', 'problems'].includes(el.dataset.sort);
       S.sort[id] = [el.dataset.sort, k === el.dataset.sort ? -d : lowFirst ? 1 : -1];
       render();
       return;
@@ -1105,6 +1160,7 @@
     if (el.id === 'ourTeam') { S.settings.ourTeam = el.value.trim() ? tkey(el.value) : ''; Store.saveSettings(S.settings); render(); loadCatalogueAndShow(true); return; }
     if (el.id === 'tbaKey') { S.settings.tbaKey = el.value.trim(); Store.saveSettings(S.settings); loadCatalogueAndShow(true); return; }
     if (el.id === 'evYear') { S.evYear = +el.value; refreshEventResults(); loadCatalogueAndShow(false); return; }
+    if (el.id === 'useReliability') { S.settings.model = S.settings.model || {}; S.settings.model.useReliability = el.checked; Store.saveSettings(S.settings); recompute(); return; }
     if (el.id === 'autoSync') { S.settings.autoSync = el.checked; Store.saveSettings(S.settings); renderStatus(); autoSyncTick(true); return; }
     if (el.id === 'level' && S.event) { S.event.level = el.value; persist(); recompute(); return; }
     if (['lambda', 'elimWeight', 'scoutWeight'].includes(el.id)) {
@@ -1160,8 +1216,8 @@
       return;
     }
     const typing = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
-    if (!typing && $('#modal').hidden && /^[1-7]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
-      S.tab = ['overview', 'teams', 'luck', 'matches', 'forecast', 'predict', 'data'][+e.key - 1];
+    if (!typing && $('#modal').hidden && /^[1-8]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+      S.tab = ['overview', 'teams', 'picks', 'luck', 'matches', 'forecast', 'predict', 'data'][+e.key - 1];
       render();
     }
   });

@@ -16,6 +16,8 @@
     lambdaPerEvent: 0.5, // extra prior strength per additional earlier event...
     lambdaMaxMult: 2,    // ...capped at 2x
     lambdaNew: 1.5,     // prior strength for teams with no history
+    useReliability: true, // recorded breakdowns lower a team's expected contribution in predictions
+    relPrior: 6,          // a team's breakdown rate is blended with the event's as if from 6 matches
     prevYearShrink: 0.9, // how much of last season's relative strength carries over (2026 backtest)
     lambdaPrevYear: 3,   // prior strength for a last-season-only prior
     newFactor: 0.85,    // teams with no history start at 85% of the event's average contribution
@@ -214,6 +216,44 @@
     };
   }
 
+  // ---------- Reliability ----------
+  // Share of a match's contribution lost when a robot has a problem, by when it happened.
+  const LOSS = { noshow: 1, auto: 0.9, teleop: 0.5, endgame: 0.2 };
+  function lossOf(iss) { return iss.type === 'noshow' ? LOSS.noshow : LOSS[iss.when] != null ? LOSS[iss.when] : 0.5; }
+
+  // Per team: q = chance of a problem in a match, L = share of contribution lost when it
+  // happens, both shrunk toward the event average (relPrior matches' worth), and
+  // factor = 1 − q·L, the expected share of its working strength it delivers.
+  function reliabilityOf(event, teams, settings, include) {
+    const n = teams.length;
+    const played = new Float64Array(n), probs = new Float64Array(n), loss = new Float64Array(n);
+    const idx = {};
+    teams.forEach((t, i) => { idx[t] = i; });
+    for (const m of event.matches) {
+      if (!isPlayed(m) || (include && !include(m))) continue;
+      for (const t of m.red.concat(m.blue)) {
+        const i = idx[t];
+        if (i === undefined) continue;
+        played[i]++;
+        const iss = robotIssue(m, t);
+        if (iss) { probs[i]++; loss[i] += lossOf(iss); }
+      }
+    }
+    let P = 0, Q = 0, Lsum = 0;
+    for (let i = 0; i < n; i++) { P += played[i]; Q += probs[i]; Lsum += loss[i]; }
+    const baseQ = P ? Q / P : 0, baseL = Q ? Lsum / Q : 0;
+    const a = settings.relPrior;
+    const q = new Float64Array(n), L = new Float64Array(n), factor = new Float64Array(n).fill(1);
+    if (Q > 0 && settings.useReliability) {
+      for (let i = 0; i < n; i++) {
+        q[i] = (probs[i] + a * baseQ) / (played[i] + a);
+        L[i] = (loss[i] + a * baseQ * baseL) / (probs[i] + a * baseQ);
+        factor[i] = 1 - q[i] * L[i];
+      }
+    }
+    return { q, L, factor, played, problems: probs, any: Q > 0 && !!settings.useReliability };
+  }
+
   // Plain least-squares OPR (tiny ridge so it exists early), for reference/comparison.
   function rawOpr(event, teams, idx, include) {
     const n = teams.length;
@@ -260,6 +300,7 @@
     const T = eventThresholds(event, game);
     return {
       teams, idx, comps, corr, game, settings,
+      rel: reliabilityOf(event, teams, settings, include),
       level: event.level || 'regional', thr: T.values, thrDetected: T.detected,
       opr: opts.priorOnly ? null : rawOpr(event, teams, idx, include),
     };
@@ -303,7 +344,13 @@
     for (const t of teamKeys) {
       const i = R.idx[t];
       if (i === undefined) { mu += c.base * R.settings.newFactor; v += c.noise / 3; continue; }
-      mu += c.mean[i]; v += c.var[i];
+      // Breakdown risk: mean × (1 − qL), plus the extra spread a possible breakdown adds.
+      const rel = R.rel;
+      if (rel && rel.any) {
+        const q = rel.q[i], L = rel.L[i], th = c.mean[i];
+        mu += th * (1 - q * L);
+        v += c.var[i] * (1 - q * L) * (1 - q * L) + q * (1 - q) * (L * th) * (L * th);
+      } else { mu += c.mean[i]; v += c.var[i]; }
     }
     return { mu, varParam: v, sd: Math.sqrt(v + c.noise) };
   }

@@ -82,6 +82,29 @@ for (const s of st.slice(0, 8)) {
   assert.strictEqual(Model.robotIssue({ out: { [t]: true } }, t).type, 'noshow', 'legacy no-show flag still works');
 }
 
+// Reliability: repeated breakdowns lower a team's expected contribution in predictions,
+// and with no problems recorded nothing changes.
+{
+  const ev3 = JSON.parse(JSON.stringify(ev));
+  const t = ev3.teams[5];
+  const base = Model.fit(ev3, game);
+  assert(!base.rel.any, 'no recorded problems → reliability off');
+  const mine = ev3.matches.filter(m => Model.isPlayed(m) && (m.red.includes(t) || m.blue.includes(t)));
+  mine.slice(0, 3).forEach(m => { m.issues = { [t]: { type: 'broke', when: 'teleop', what: 'drivetrain' } }; });
+  const R3 = Model.fit(ev3, game);
+  const i = R3.idx[t];
+  const others = ev3.teams.filter(x => x !== t).slice(0, 5);
+  const pA = Model.predictMatch(R3, [t, others[0], others[1]], others.slice(2, 5));
+  const R3off = Model.fit(ev3, game, { useReliability: false });
+  const pB = Model.predictMatch(R3off, [t, others[0], others[1]], others.slice(2, 5));
+  console.log(`reliability: ${t} problems 3/${mine.length}, chance of problem ${(100 * R3.rel.q[i]).toFixed(0)}%, delivers ${(100 * R3.rel.factor[i]).toFixed(0)}% of working strength; ` +
+    `alliance score ${pB.red.score.toFixed(1)} → ${pA.red.score.toFixed(1)}, win ${(100 * pB.pRed).toFixed(1)}% → ${(100 * pA.pRed).toFixed(1)}%`);
+  assert(pA.red.score < pB.red.score && pA.pRed < pB.pRed, 'unreliable robot lowers its alliance prediction');
+  assert(R3.rel.factor[R3.idx[others[0]]] > R3.rel.factor[i], 'teams without problems rate as more reliable');
+  const sim3 = Sim.simulateRankings(ev3, R3, { nSims: 1000 });
+  assert(Math.abs(Object.values(sim3.byTeam).reduce((a, x) => a + x.p8, 0) - 8) < 1e-9);
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };

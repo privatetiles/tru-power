@@ -61,11 +61,15 @@
     const bonusList = g.bonuses.map(b => ({ c: ci[b.comp], thr: thr[b.key] }));
     const linearCap = g.bonuses.length || 3;
 
+    // Breakdowns: each robot independently has a problem with chance q, delivering 1 − L.
+    const relQ = R.rel && R.rel.any ? R.rel.q : null, relL = R.rel && R.rel.any ? R.rel.L : null;
+    const share = new Float64Array(3);
     function playAlliance(teams, out) {
       const z0 = rng.normal();
+      teams.forEach((i, j) => { share[j] = relQ && rng.uniform() < relQ[i] ? 1 - relL[i] : 1; });
       for (let k = 0; k < C; k++) {
         let mu = 0;
-        for (const i of teams) mu += theta[k * T + i];
+        teams.forEach((i, j) => { mu += theta[k * T + i] * share[j]; });
         const z = k === 0 ? z0 : rho[k] * z0 + rhoC[k] * rng.normal();
         out[k] = Math.max(0, mu + noiseSd[k] * z);
       }
