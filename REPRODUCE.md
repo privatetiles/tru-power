@@ -40,13 +40,15 @@ The complete tables (accuracy with intervals, Brier, Brier skill, log loss, cali
 | 2025 (blind) | 14,686 | 78.1% / 0.1493 | 78.1% / 0.1522 |
 | 2024 (blind) | 13,937 | 77.0% / 0.1565 | 77.0% / 0.1573 |
 
-**Head-to-head** with 95% intervals from resampling whole events (`compare.js`):
+**Head-to-head** with 95% intervals from resampling whole events (`metrics.js`; the canonical numbers are in BACKTEST.md):
 
 | Season | Brier advantage (95% range) | Accuracy difference (95% range) | Events where TRU POWER's Brier is better |
 |---|---|---|---|
-| 2026 | 0.0050 (0.0032 to 0.0068) | +0.05 pts (−0.42 to +0.50) | 133 / 208 |
-| 2025 | 0.0029 (0.0013 to 0.0044) | −0.07 pts (−0.54 to +0.41) | 119 / 198 |
-| 2024 | 0.0008 (−0.0008 to +0.0022) | −0.04 pts (−0.51 to +0.40) | 94 / 185 |
+| 2026 | 0.0050 (0.0032 to 0.0068) | +0.05 pts (−0.42 to +0.49) | 133 / 208 |
+| 2025 | 0.0029 (0.0013 to 0.0044) | −0.07 pts (−0.55 to +0.42) | 119 / 198 |
+| 2024 | 0.0008 (−0.0007 to +0.0024) | −0.04 pts (−0.49 to +0.43) | 94 / 185 |
+
+`tools/compare.js` gives the same point estimates. It draws its bootstrap resamples in a different order, so the last digit of an interval can differ from BACKTEST.md; BACKTEST.md is the reference.
 
 **Tests**
 - `test.js` and `test-tba.js` print `ALL TESTS PASSED` / `TBA IMPORT TESTS PASSED`.

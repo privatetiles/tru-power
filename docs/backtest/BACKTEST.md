@@ -24,6 +24,16 @@ Positive = TRU POWER better. 95% intervals from 2,000 cluster-bootstrap resample
 | 2025 | −0.07 pts (−0.55 to 0.42) | 0.0029 (0.0013 to 0.0044) | 0.0121 (0.0081 to 0.0160) | 119/198 | TRU POWER lower (better) |
 | 2024 | −0.04 pts (−0.49 to 0.43) | 0.0008 (−0.0007 to 0.0024) | 0.0036 (−0.0004 to 0.0079) | 94/185 | not distinguishable |
 
+## How often the models agree
+
+Picking winners is a tie because the two models usually favour the same alliance, and where they disagree each is right about half the time.
+
+| Season | Same favourite | Matches where they disagree | TRU POWER right when they disagree | Mean gap between their probabilities |
+|---|---|---|---|---|
+| 2026 | 91.2% | 1,325 | 666 (50.3%) | 8.4 pts |
+| 2025 | 91.4% | 1,260 | 625 (49.6%) | 7.6 pts |
+| 2024 | 90.8% | 1,289 | 642 (49.8%) | 7.8 pts |
+
 ## Calibration
 
 Logistic recalibration y ~ a + b·logit(p). Perfect calibration: slope 1, intercept 0. Slope above 1 = predictions are too cautious; below 1 = too confident. ECE = expected calibration error over 10 equal-width bins.
