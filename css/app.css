@@ -288,3 +288,10 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .path-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0; }
 .path-notes { margin: 4px 0 0; padding-left: 16px; }
 .path-legend .sw, .path-notes .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+.field .f-endpt { fill: none; stroke: #e8590c; stroke-width: 2; stroke-dasharray: 4 3; opacity: .7; }
+.field .f-endpt.picked { stroke-width: 3.5; stroke-dasharray: none; opacity: 1; }
+.path-pad.link svg, .path-pad.erase svg { cursor: pointer; }
+.path-help { min-height: 2.9em; margin: 0 0 6px; }
+.path-layout { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 14px; align-items: start; }
+@media (max-width: 900px) { .path-layout { grid-template-columns: 1fr; } }
+.path-layout .marker-notes { margin-top: 0; max-height: 480px; overflow-y: auto; }

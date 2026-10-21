@@ -169,6 +169,39 @@ for (const s of st.slice(0, 8)) {
   console.log(`path markers: max distance from line ${worstOff.toExponential(1)}, max tangent error ${worstAngle.toExponential(1)} rad over 200 random clicks`);
 }
 
+// Multiple strokes: joining and linking pieces must never move a marker or change its direction.
+{
+  const P = require('../js/paths.js');
+  const mk = (x0, y0, dx, dy, n) => { const s = []; for (let i = 0; i < n; i++) P.addPoint(s, x0 + i * dx, y0 + i * dy + 10 * Math.sin(i)); return s; };
+  const poses = (strokes, markers) => markers.map(m => P.pose(strokes[m.p], m.seg, m.t));
+  const same = (a, b, flip) => a.every((q, i) => Math.hypot(q.x - b[i].x, q.y - b[i].y) < 1e-9 &&
+    Math.abs(Math.atan2(Math.sin(q.angle + (flip && flip[i] ? Math.PI : 0) - b[i].angle), Math.cos(q.angle + (flip && flip[i] ? Math.PI : 0) - b[i].angle))) < 1e-9);
+  // Auto-continue: a new stroke starting near the end of the first joins it.
+  const strokes = [], markers = [];
+  P.addStroke(strokes, markers, mk(50, 100, 12, 5, 20));
+  markers.push({ p: 0, seg: 5, t: 0.4, note: 'a' }, { p: 0, seg: 15, t: 0.9, note: 'b' });
+  const end0 = strokes[0][strokes[0].length - 1];
+  const before = poses(strokes, markers);
+  const r1 = P.addStroke(strokes, markers, mk(end0[0] + 8, end0[1] + 6, 10, -4, 15));
+  assert(strokes.length === 1 && r1.joined.length === 1, 'a stroke starting at the previous end continues it');
+  assert(same(poses(strokes, markers), before), 'markers unchanged after auto-continue');
+  // A separate piece far away stays separate; then the link tool joins it.
+  P.addStroke(strokes, markers, mk(700, 400, 8, -3, 12));
+  assert(strokes.length === 2, 'a far-away stroke stays a separate piece');
+  markers.push({ p: 1, seg: 4, t: 0.5, note: 'c' });
+  const b2 = poses(strokes, markers);
+  // Pick END of piece 1 and END of piece 0: piece 0 must be reversed so the route flows.
+  const res = P.linkEnds(strokes, markers, { p: 1, end: 'end' }, { p: 0, end: 'end' });
+  assert(res.ok && strokes.length === 1, 'link tool joins two pieces');
+  const after = poses(strokes, markers);
+  // Markers a and b were on the reversed piece: same spot, opposite direction. c unchanged.
+  assert(same(after, b2, [true, true, false]), 'markers keep their exact spot through a link (reversed piece points the other way)');
+  // Reverse twice = identity.
+  const b3 = poses(strokes, markers); P.reverse(strokes, markers, 0); P.reverse(strokes, markers, 0);
+  assert(same(poses(strokes, markers), b3), 'reversing twice restores markers');
+  console.log('multi-stroke paths: auto-continue, separate pieces, link (with reversal) keep every marker exactly in place');
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };

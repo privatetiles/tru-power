@@ -1107,7 +1107,7 @@
   // One scout watches one robot (their seat: Red 1–3 / Blue 1–3) and counts its fuel.
   const SEATS = [['r', 0, 'Red 1'], ['r', 1, 'Red 2'], ['r', 2, 'Red 3'], ['b', 0, 'Blue 1'], ['b', 1, 'Blue 2'], ['b', 2, 'Blue 3']];
   function scoutState() {
-    S.sc = S.sc || { auto: 0, tele: 0, counted: true, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '', path: [], markers: [], tool: 'draw' };
+    S.sc = S.sc || { auto: 0, tele: 0, counted: true, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '', paths: [], markers: [], hist: [], tool: 'draw', linkFrom: null };
     return S.sc;
   }
   function scoutRow(matchKey, team) {
@@ -1133,7 +1133,7 @@
       auto: row ? row.values[SCOUT_AUTO] || 0 : 0, tele: row && row.values[SCOUT_FUEL] != null ? row.values[SCOUT_FUEL] - (row.values[SCOUT_AUTO] || 0) : 0,
       def: row ? row.values[SCOUT_DEF] || 0 : 0, note: row ? row.note || '' : '',
       status: iss ? iss.type : 'ok', when: (iss && iss.when) || 'teleop', what: (iss && iss.what) || 'drivetrain', loadedFor: m && m.key + '|' + t,
-      path: row && row.path ? row.path.map(p => p.slice()) : [], markers: row && row.markers ? row.markers.map(k => Object.assign({}, k)) : [], tool: 'draw' });
+      paths: Paths.strokesOf(row), markers: row && row.markers ? row.markers.map(k => Object.assign({ p: 0 }, k)) : [], hist: [], tool: 'draw', linkFrom: null });
   }
   function bumpCount(which, d) {
     const st = scoutState();
@@ -1154,7 +1154,7 @@
     // Only record fuel if the scout says they counted it: an uncounted 0 would read as "scored nothing".
     const values = st.counted ? { [SCOUT_FUEL]: st.auto + st.tele, [SCOUT_AUTO]: st.auto, [SCOUT_DEF]: st.def } : { [SCOUT_DEF]: st.def };
     sc.rows.push({ team: t, match: m.key, scout: who, at: Date.now(), note: st.note, values,
-      path: st.path.length > 1 ? st.path : undefined, markers: st.path.length > 1 && st.markers.length ? st.markers : undefined });
+      paths: st.paths.length ? st.paths : undefined, markers: st.paths.length && st.markers.length ? st.markers : undefined });
     for (const c of [SCOUT_FUEL, SCOUT_AUTO, SCOUT_DEF]) if (!sc.columns.includes(c)) sc.columns.push(c);
     sc.map[SCOUT_FUEL] = 'fuel'; sc.map[SCOUT_AUTO] = 'autoFuel';
     m.issues = m.issues || {};
@@ -1246,18 +1246,23 @@
           ${worst.length ? `<h3 style="margin-top:12px">Worth a recheck</h3><table><tbody>${worst.map(c => `<tr><td><a data-match="${esc(c.m.key)}">${matchLabel(c.m)}</a> ${c.side}</td><td class="n">scouted ${f1(c.sum, 0)}</td><td class="n">official ${c.official}</td><td class="n neg">${sgn(100 * c.err, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
         </div>
       </div>
-      <div class="card path-card" style="margin-top:14px"><h3>Robot path · ${esc(tnum(t))} in ${matchLabel(m)}</h3>
+      <div class="card path-card" style="margin-top:14px"><h3>Robot path · ${esc(tnum(t))} in ${matchLabel(m)}${st.paths.length > 1 ? ` · ${st.paths.length} pieces` : ''}</h3>
         <div class="toolbar">
           <div class="seg" role="group" aria-label="Path tool">
-            <button class="${st.tool === 'draw' ? 'on' : ''}" data-ptool="draw" title="Drag on the field to trace the robot's route (drawing again replaces it)">Trace path</button>
-            <button class="${st.tool === 'mark' ? 'on' : ''}" data-ptool="mark" title="Click on the line to add a marker">Add marker</button>
+            <button class="${st.tool === 'draw' ? 'on' : ''}" data-ptool="draw" title="Drag to trace. Lift and drag again to add another piece; a piece that starts where the last one ended continues it.">Trace</button>
+            <button class="${st.tool === 'mark' ? 'on' : ''}" data-ptool="mark" title="Click on a line to add a marker">Add marker</button>
+            <button class="${st.tool === 'link' ? 'on' : ''}" data-ptool="link" title="Click the end of one piece, then the start of another, to join them">Link ends</button>
+            <button class="${st.tool === 'erase' ? 'on' : ''}" data-ptool="erase" title="Click a piece to remove it (and its markers)">Erase piece</button>
           </div>
-          <button class="btn small" data-act="path-undo" ${st.markers.length ? '' : 'disabled'}>Undo marker</button>
-          <button class="btn small danger" data-act="path-clear" ${st.path.length ? '' : 'disabled'}>Clear path</button>
-          <span class="help">${st.tool === 'draw' ? 'Drag to trace the route.' : 'Click on the line: the marker snaps onto it and points along the direction of travel.'} Saved with <b>Save &amp; next</b>.</span>
+          <button class="btn small" data-act="path-undo" ${st.hist.length ? '' : 'disabled'}>Undo</button>
+          <button class="btn small danger" data-act="path-clear" ${st.paths.length ? '' : 'disabled'}>Clear all</button>
+
         </div>
-        <div id="pathPad" class="path-pad ${st.tool}">${fieldSvg([{ path: st.path, markers: st.markers }], { numbered: true })}</div>
-        <div class="marker-notes">${st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="Note for marker ${i + 1} (e.g. picked up fuel, got defended)"></label>`).join('')}</div>
+        <p class="help path-help">${{ draw: 'Drag to trace. Lifted too early? Start the next drag near where the line stopped and it continues.', mark: 'Click on a line: the marker snaps onto it and points along the direction of travel.', link: st.linkFrom ? 'Now click the end you want to join it to.' : 'Click near the end of one piece, then near the end of another.', erase: 'Click a piece to remove it.' }[st.tool]} Saved with <b>Save &amp; next</b>.</p>
+        <div class="path-layout">
+        <div id="pathPad" class="path-pad ${st.tool}">${fieldSvg([{ strokes: st.paths, markers: st.markers, ends: st.tool === 'link', linkFrom: st.linkFrom }], { numbered: true })}</div>
+        <div class="marker-notes"><div class="ts-label">Marker notes</div>${st.markers.length ? st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="e.g. picked up fuel, got defended"></label>`).join('') : '<p class="help">Use <b>Add marker</b> and click on the line. Each marker gets a note here.</p>'}</div>
+        </div>
       </div>`;
   }
 
@@ -1275,10 +1280,23 @@
     g += `<text x="18" y="22" class="f-lbl red">Red alliance wall</text><text x="${W - 18}" y="22" text-anchor="end" class="f-lbl blue">Blue alliance wall</text>`;
     items.forEach((it, n) => {
       const col = opts.numbered ? '#16191f' : PATH_COLORS[n % PATH_COLORS.length];
-      const p = it.path || [];
-      if (p.length > 1) g += `<polyline points="${p.map(q => q.join(',')).join(' ')}" class="f-path" style="stroke:${col}"${it.title ? '' : ' id="livePath"'}><title>${esc(it.title || '')}</title></polyline>`;
-      if (p.length) g += `<circle cx="${p[0][0]}" cy="${p[0][1]}" r="7" class="f-start" style="stroke:${col}"><title>Start${it.title ? ' · ' + esc(it.title) : ''}</title></circle>`;
+      const strokes = it.strokes || [];
+      strokes.forEach((p, si) => {
+        if (p.length > 1) g += `<polyline points="${p.map(q => q.join(',')).join(' ')}" class="f-path" style="stroke:${col}" data-stroke="${si}"><title>${esc(it.title || 'Piece ' + (si + 1))}</title></polyline>`;
+        if (!p.length) return;
+        g += `<circle cx="${p[0][0]}" cy="${p[0][1]}" r="7" class="f-start" style="stroke:${col}"><title>Start${it.title ? ' · ' + esc(it.title) : ''}</title></circle>`;
+        if (p.length > 1) {
+          // End of a piece: a small arrowhead along the last segment.
+          const a = p[p.length - 2], b = p[p.length - 1], ang = Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
+          g += `<path d="M0,0 L-12,-7 L-12,7 Z" transform="translate(${b[0]},${b[1]}) rotate(${ang.toFixed(1)})" style="fill:${col}"/>`;
+          if (it.ends) for (const [end, q] of [['start', p[0]], ['end', b]]) {
+            const picked = it.linkFrom && it.linkFrom.p === si && it.linkFrom.end === end;
+            g += `<circle cx="${q[0]}" cy="${q[1]}" r="${picked ? 15 : 11}" class="f-endpt ${picked ? 'picked' : ''}"/>`;
+          }
+        }
+      });
       (it.markers || []).forEach((k, i) => {
+        const p = strokes[k.p || 0] || [];
         const ps = Paths.pose(p, k.seg, k.t);
         if (!ps) return;
         const deg = ps.angle * 180 / Math.PI;
@@ -1302,39 +1320,68 @@
     if (!svg) return;
     const st = scoutState();
     const toField = e => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x, q.y]; };
-    let drawing = false;
+    let drawing = null;
+    const snapshot = () => { st.hist.push(JSON.stringify({ paths: st.paths, markers: st.markers })); if (st.hist.length > 50) st.hist.shift(); };
     svg.addEventListener('pointerdown', e => {
       e.preventDefault(); // keep the browser from moving focus on click (the note box gets it)
       const [x, y] = toField(e);
       if (st.tool === 'draw') {
-        drawing = true; svg.setPointerCapture(e.pointerId);
-        st.path = []; st.markers = [];
-        Paths.addPoint(st.path, x, y);
-        let live = svg.querySelector('#livePath');
-        if (!live) { live = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); live.setAttribute('id', 'livePath'); live.setAttribute('class', 'f-path'); live.style.stroke = '#16191f'; svg.appendChild(live); }
-        svg.querySelectorAll('.f-marker').forEach(n => n.remove());
-        live.setAttribute('points', st.path.map(q => q.join(',')).join(' '));
-      } else {
-        if (st.path.length < 2) { toast('Trace the path first, then add markers on it.'); return; }
-        const hit = Paths.project(st.path, x, y);
-        if (!hit || hit.dist > Paths.SNAP) { toast('Click on the line to place a marker.'); return; }
-        st.markers.push({ seg: hit.seg, t: Math.round(hit.t * 1000) / 1000, note: '' });
-        // Keep markers in order along the path so numbers follow the route.
-        st.markers.sort((a, b) => a.seg + a.t - (b.seg + b.t));
+        drawing = []; svg.setPointerCapture(e.pointerId);
+        Paths.addPoint(drawing, x, y);
+        const live = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        live.setAttribute('id', 'livePath'); live.setAttribute('class', 'f-path'); live.style.stroke = '#e8590c';
+        svg.appendChild(live);
+        live.setAttribute('points', drawing.map(q => q.join(',')).join(' '));
+        return;
+      }
+      if (!st.paths.length) { toast('Trace the path first.'); return; }
+      if (st.tool === 'mark') {
+        const hit = Paths.projectAll(st.paths, x, y);
+        if (!hit || hit.dist > Paths.SNAP) { toast('Click on a line to place a marker.'); return; }
+        snapshot();
+        const mk = { p: hit.p, seg: hit.seg, t: Math.round(hit.t * 1000) / 1000, note: '' };
+        st.markers.push(mk);
+        // Keep markers in route order (piece, then position along it) so numbers follow the route.
+        st.markers.sort((a, b) => a.p - b.p || a.seg + a.t - (b.seg + b.t));
+        const idx = st.markers.indexOf(mk);
         render();
-        const idx = st.markers.findIndex(k => k.seg === hit.seg && Math.abs(k.t - Math.round(hit.t * 1000) / 1000) < 1e-9);
         // Focus the new marker's note once the click has finished, so typing goes straight in.
-        setTimeout(() => { const inp = document.querySelector(`[data-mnote="${idx}"]`); if (inp) inp.focus(); }, 0);
+        setTimeout(() => { const inp = document.querySelector(`[data-mnote="${idx}"]`); if (inp) inp.focus({ preventScroll: true }); }, 0);
+      } else if (st.tool === 'link') {
+        const endHit = Paths.nearestEnd(st.paths, x, y, Paths.SNAP * 1.5);
+        if (!endHit) { toast('Click near the end of a piece.'); return; }
+        if (!st.linkFrom) { st.linkFrom = endHit; render(); return; }
+        if (endHit.p === st.linkFrom.p) { st.linkFrom = endHit; render(); return; }
+        snapshot();
+        const res = Paths.linkEnds(st.paths, st.markers, st.linkFrom, endHit);
+        st.linkFrom = null;
+        render();
+        if (res.ok) toast('Pieces joined.');
+      } else if (st.tool === 'erase') {
+        const hit = Paths.projectAll(st.paths, x, y);
+        if (!hit || hit.dist > Paths.SNAP) { toast('Click on a piece to remove it.'); return; }
+        snapshot();
+        st.paths.splice(hit.p, 1);
+        st.markers = st.markers.filter(k => k.p !== hit.p).map(k => (k.p > hit.p ? Object.assign(k, { p: k.p - 1 }) : k));
+        render();
       }
     });
     svg.addEventListener('pointermove', e => {
       if (!drawing) return;
       const [x, y] = toField(e);
-      Paths.addPoint(st.path, x, y);
+      Paths.addPoint(drawing, x, y);
       const live = svg.querySelector('#livePath');
-      if (live) live.setAttribute('points', st.path.map(q => q.join(',')).join(' '));
+      if (live) live.setAttribute('points', drawing.map(q => q.join(',')).join(' '));
     });
-    const end = () => { if (!drawing) return; drawing = false; if (st.path.length < 2) st.path = []; render(); };
+    const end = () => {
+      if (!drawing) return;
+      const stroke = drawing; drawing = null;
+      if (stroke.length < 2) { render(); return; }
+      snapshot();
+      const res = Paths.addStroke(st.paths, st.markers, stroke);
+      render();
+      if (res.joined.length) toast('Piece ' + res.joined.join(' and ') + '.');
+    };
     svg.addEventListener('pointerup', end);
     svg.addEventListener('pointercancel', end);
   }
@@ -1361,11 +1408,11 @@
   // All traced paths for a team, one color per match, with marker notes listed.
   function teamPathsHtml(k, print) {
     const sc = S.event.scouting;
-    const rows = sc && sc.rows ? sc.rows.filter(r => r.team === k && r.path && r.path.length > 1) : [];
+    const rows = sc && sc.rows ? sc.rows.filter(r => r.team === k && Paths.strokesOf(r).length) : [];
     if (!rows.length) return '';
     const label = r => { const m = S.event.matches.find(x => x.key === r.match); return m ? matchLabel(m) : r.match; };
     rows.sort((a, b) => Model.matchOrder(S.event.matches.find(x => x.key === a.match) || {}) - Model.matchOrder(S.event.matches.find(x => x.key === b.match) || {}));
-    const items = rows.map(r => ({ path: r.path, markers: r.markers || [], title: label(r) + (r.scout ? ' (' + r.scout + ')' : '') }));
+    const items = rows.map(r => ({ strokes: Paths.strokesOf(r), markers: (r.markers || []).map(x => Object.assign({ p: 0 }, x)), title: label(r) + (r.scout ? ' (' + r.scout + ')' : '') }));
     const notes = rows.flatMap((r, n) => (r.markers || []).filter(x => x.note).map(x => `<li><span class="sw" style="background:${PATH_COLORS[n % PATH_COLORS.length]}"></span>${esc(label(r))}: ${esc(x.note)}</li>`)).join('');
     return `${print ? '<h4>Traced paths</h4>' : '<h3 style="margin-top:12px">Traced paths</h3>'}
       <div class="path-mini">${fieldSvg(items)}</div>
@@ -1726,8 +1773,8 @@
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
     'scout-save': () => saveScout(),
-    'path-undo': () => { const st = scoutState(); st.markers.pop(); render(); },
-    'path-clear': () => { const st = scoutState(); st.path = []; st.markers = []; render(); },
+    'path-undo': () => { const st = scoutState(); const h = st.hist.pop(); if (h) { const v = JSON.parse(h); st.paths = v.paths; st.markers = v.markers; st.linkFrom = null; } render(); },
+    'path-clear': () => { const st = scoutState(); st.hist.push(JSON.stringify({ paths: st.paths, markers: st.markers })); st.paths = []; st.markers = []; st.linkFrom = null; render(); },
     'print-team': el => printHtml(teamReportHtml(el.dataset.key)),
     'print-match': el => { const m = S.event.matches.find(x => x.key === el.dataset.key); if (m) printHtml(matchSheetHtml(m)); },
     'print-picks': () => printHtml(pickListHtml()),
@@ -1762,7 +1809,7 @@
   // ---------- events ----------
   document.addEventListener('click', e => {
     const pt = e.target.closest('[data-ptool]');
-    if (pt) { scoutState().tool = pt.dataset.ptool; render(); return; }
+    if (pt) { const st = scoutState(); st.tool = pt.dataset.ptool; st.linkFrom = null; render(); return; }
     const bump = e.target.closest('[data-bump]');
     if (bump) { const [w, d] = bump.dataset.bump.split(':'); bumpCount(w, +d); return; }
     const ps = e.target.closest('[data-poolsort]');
