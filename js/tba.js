@@ -111,12 +111,14 @@
     log('Finding each team\'s earlier ' + year + ' events…');
     event.priorEvents = event.priorEvents || {};
     event.teamPriorEvents = {};
+    event.priorEventInfo = event.priorEventInfo || {};
     const lists = await pool(event.teams, 6, t => get('/team/' + t + '/events/' + year + '/simple', apiKey).catch(() => []));
     const needed = new Set();
     event.teams.forEach((t, i) => {
       const evs = (lists[i] || []).filter(e => e.key !== eventKey && e.event_type !== 100 &&
         (!info.start_date || (e.end_date && e.end_date <= info.start_date) || (e.start_date && e.start_date < info.start_date)));
       event.teamPriorEvents[t] = evs.map(e => e.key);
+      evs.forEach(e => { event.priorEventInfo[e.key] = { name: e.name, start: e.start_date }; });
       evs.forEach(e => needed.add(e.key));
     });
     const todo = [...needed].filter(k => !event.priorEvents[k]);

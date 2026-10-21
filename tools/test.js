@@ -105,6 +105,42 @@ for (const s of st.slice(0, 8)) {
   assert(Math.abs(Object.values(sim3.byTeam).reduce((a, x) => a + x.p8, 0) - 8) < 1e-9);
 }
 
+// Trend detection: a team that gets much better halfway through is flagged; with no real
+// change, few teams should be (false alarms).
+{
+  let falseAlarms = 0, total = 0, caught = 0;
+  for (let seed = 1; seed <= 6; seed++) {
+    const evT = Demo.makeDemoEvent({ seed: 500 + seed, playedFrac: 1 });
+    const t = evT.teams[seed];
+    const mine = evT.matches.filter(m => Model.isPlayed(m) && (m.red.includes(t) || m.blue.includes(t)));
+    const RT0 = Model.fit(evT, game);
+    for (const k of evT.teams) { if (k === t) continue; const w = Model.trendWithin(evT, RT0, k); if (w) { total++; if (w.label !== 'steady') falseAlarms++; } }
+    mine.slice(Math.floor(mine.length / 2)).forEach(m => { const s2 = m.red.includes(t) ? m.r : m.b; s2.total += 60; s2.fuel += 60; }); // big mid-event upgrade
+    const w = Model.trendWithin(evT, Model.fit(evT, game), t);
+    if (w && w.label === 'improving') caught++;
+  }
+  console.log(`trend detection: caught ${caught}/6 real upgrades, false alarms ${(100 * falseAlarms / total).toFixed(1)}% of ${total} unchanged teams`);
+  assert(caught >= 4, 'should catch most real upgrades');
+  assert(falseAlarms / total < 0.2, 'should rarely flag unchanged teams');
+}
+
+// Rating ranges: the 80% "likely range" should contain the hidden true strength ~80% of the time.
+{
+  let inside = 0, n = 0;
+  for (const frac of [0.3, 0.6, 1]) for (let seed = 1; seed <= 8; seed++) {
+    const evC = Demo.makeDemoEvent({ seed: 900 + seed, playedFrac: frac });
+    const RC = Model.fit(evC, game);
+    RC.teams.forEach((t, i) => {
+      const tr = evC.truth[t], c = tr.climb;
+      const truth = tr.fuel + 10 * c + 10 * c * c + 10 * c ** 3 + (tr.autoClimb ? 11.25 : 0);
+      const mu = RC.comps.total.mean[i], sd = Math.sqrt(RC.comps.total.var[i]);
+      n++; if (Math.abs(truth - mu) <= 1.2816 * sd) inside++;
+    });
+  }
+  console.log(`rating ranges: true strength inside the 80% likely range ${(100 * inside / n).toFixed(1)}% of ${n} team-events`);
+  assert(inside / n > 0.7 && inside / n < 0.92, 'likely ranges should be roughly honest');
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };

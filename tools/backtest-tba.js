@@ -51,6 +51,8 @@ function newAcc() {
     all: z(), third: [z(), z(), z()],
     cal: Array.from({ length: 10 }, () => ({ n: 0, p: 0, y: 0 })),
     bonus: {}, scoreErr: 0, scoreN: 0, events: 0,
+    cover: 0, coverN: 0,                  // alliance score inside the predicted 80% range
+    rankIn: 0, rankN: 0, rankErr: 0,      // final rank inside the forecast's 80% range (from halfway)
   };
 }
 
@@ -95,6 +97,10 @@ for (const info of events) {
     if (info.event_type !== 99) dumped[m.key] = p.pRed;
     if (m.r.total != null && m.b.total != null) {
       acc.scoreErr += (p.red.score - m.r.total) ** 2 + (p.blue.score - m.b.total) ** 2; acc.scoreN += 2;
+      for (const [teams, act] of [[m.red, m.r.total], [m.blue, m.b.total]]) {
+        const d = Model.allianceDist(R, teams, 'total');
+        acc.coverN++; if (Math.abs(act - d.mu) <= 1.2816 * d.sd) acc.cover++;
+      }
     }
     for (const [side, pr] of [['r', p.red], ['b', p.blue]]) {
       for (const b of game.bonuses) {
@@ -111,6 +117,21 @@ for (const info of events) {
     const bin = Math.min(9, Math.floor(p.pRed * 10));
     acc.cal[bin].n++; acc.cal[bin].p += p.pRed; acc.cal[bin].y += y;
   });
+
+  // Forecast honesty: from the halfway point, is each team's final rank inside its 80% range?
+  if (process.argv.includes('--ranks') && quals.length >= 20) {
+    const half = new Set(quals.slice(0, Math.floor(quals.length / 2)).map(x => x.key));
+    const evHalf = Object.assign({}, ev, { matches: ev.matches.map(x => (half.has(x.key) ? x : Object.assign({}, x, { played: false, r: undefined, b: undefined }))) });
+    const Rh = Model.fit(evHalf, game, settings);
+    const sim = Sim.simulateRankings(evHalf, Rh, { nSims: 600 });
+    const final = Model.standings(ev, game);
+    for (const st of final) {
+      const f = sim.byTeam[st.team];
+      if (!f || !st.rank) continue;
+      acc.rankN++; acc.rankErr += Math.abs(f.expRank - st.rank);
+      if (st.rank >= f.p10 && st.rank <= f.p90) acc.rankIn++;
+    }
+  }
 
   if (doLuck && info.event_type !== 99) {
     const R = Model.fit(ev, game, settings);
@@ -138,6 +159,8 @@ for (const [name, acc] of Object.entries(groups)) {
   console.log(`\n== ${name}: ${acc.events} events, ${acc.all.n} decided quals — accuracy / Brier`);
   console.log(`  all ${fmt(acc.all)} | early ${fmt(acc.third[0])} | mid ${fmt(acc.third[1])} | late ${fmt(acc.third[2])}`);
   console.log(`  score RMSE (no-foul alliance pts): ${Math.sqrt(acc.scoreErr / acc.scoreN).toFixed(1)}`);
+  if (acc.coverN) console.log(`  alliance score inside predicted 80% range: ${(100 * acc.cover / acc.coverN).toFixed(1)}% (target 80%)`);
+  if (acc.rankN) console.log(`  final rank inside halfway forecast's 80% range: ${(100 * acc.rankIn / acc.rankN).toFixed(1)}% (target 80%), avg rank error ${(acc.rankErr / acc.rankN).toFixed(2)}`);
   for (const [k, B] of Object.entries(acc.bonus)) {
     const rate = B.y / B.n;
     console.log(`  ${k.padEnd(13)} predicted ${(100 * B.p / B.n).toFixed(1)}% actual ${(100 * rate).toFixed(1)}%  Brier ${(B.brier / B.n).toFixed(4)} (always-guess-rate ${(rate * (1 - rate)).toFixed(4)})`);

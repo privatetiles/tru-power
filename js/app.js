@@ -22,6 +22,18 @@
   const pct = (p, d = 0) => (p == null || !isFinite(p) ? '–' : (100 * p).toFixed(d) + '%');
   const sgn = (x, d = 2) => (x == null || !isFinite(x) ? '–' : (x > 0 ? '+' : '') + x.toFixed(d));
   const cls = x => (x == null ? '' : x > 0.005 ? 'pos' : x < -0.005 ? 'neg' : '');
+  // 80% ranges. Ratings use the posterior (z = 1.28). Predicted scores use z = 1.35: real
+  // scores have fatter tails than a normal curve, and on the 2026 backtest z = 1.28 covered
+  // only 77.6% of alliance scores.
+  const Z_RATING = 1.2816, Z_SCORE = 1.35;
+  const range = (mu, sd, z = Z_RATING) => (mu == null || sd == null ? '–' : `${f1(Math.max(0, mu - z * sd), 0)}–${f1(mu + z * sd, 0)}`);
+  // How sure: rating uncertainty relative to how spread out the teams are.
+  function sureOf(sd) {
+    if (sd == null || !S.tpSpread) return null;
+    const r = sd / S.tpSpread;
+    return r < 0.25 ? 'High' : r < 0.5 ? 'Medium' : 'Low';
+  }
+  const surePill = sd => { const s = sureOf(sd); return s ? `<span class="pill ${s === 'High' ? 'good' : s === 'Low' ? 'bad' : 'muted'}" title="How sure the rating is: its uncertainty compared with the spread between teams">${s}</span>` : ''; };
   const ours = k => S.settings.ourTeam && k === tkey(S.settings.ourTeam);
   const teamLink = (k, extra = '') => `<a class="team ${ours(k) ? 'ours' : ''} ${extra}" data-team="${esc(k)}" title="${esc(S.event && S.event.teamNames && S.event.teamNames[k] || '')}">${esc(tnum(k))}</a>`;
   const ago = ts => {
@@ -98,7 +110,10 @@
     S.Rprior = Model.fit(ev, S.game, modelSettings(), { priorOnly: true });
     S.st = Model.standings(ev, S.game);
     S.stBy = Object.fromEntries(S.st.map(s => [s.team, s]));
+    S.trendCache = {};
     S.luck = Sim.scheduleLuck(ev, S.R, S.Rprior);
+    { const m = Array.from(S.R.comps.total.mean); const mu = m.reduce((a, b) => a + b, 0) / (m.length || 1);
+      S.tpSpread = Math.sqrt(m.reduce((a, b) => a + (b - mu) ** 2, 0) / (m.length || 1)) || null; }
     S.computeMs = performance.now() - t0;
     render();
     scheduleSim();
@@ -229,7 +244,7 @@
       }
       html += `<div class="card hl" style="margin-bottom:14px"><h3>Our team · ${teamLink(ot)} ${esc(r.name)}</h3>
         <div class="stats">
-          ${statCard('True Potential', f1(r.tp), '± ' + f1(r.tpSd))}
+          ${statCard('True Potential', f1(r.tp), 'likely ' + range(r.tp, r.tpSd) + ' · ' + (sureOf(r.tpSd) || '') + ' confidence')}
           ${statCard('TP rank', '#' + tpRank[ot], 'of ' + rows.length)}
           ${statCard('Current rank', r.rank ? '#' + r.rank : '–', r.rs != null ? 'RS ' + f1(r.rs, 2) : '')}
           ${statCard('True rank', '#' + r.trueRank, 'neutral sched.')}
@@ -326,7 +341,9 @@
       { key: 'starred', label: '★', nosort: false, sortVal: r => (r.starred ? 1 : 0), fmt: r => `<a data-star="${r.key}" title="Star">${r.starred ? '★' : '☆'}</a>` },
       { key: 'num', label: 'Team', fmt: r => teamLink(r.key) },
       { key: 'name', label: 'Name', cls: 'name', fmt: r => esc(r.name) },
-      { key: 'tp', label: 'True Potential', n: 1, title: 'Expected points this robot adds per match (no fouls), schedule- and partner-adjusted', fmt: r => `<b>${f1(r.tp)}</b> <span class="sd">±${f1(r.tpSd, 0)}</span>` },
+      { key: 'tp', label: 'True Potential', n: 1, title: 'Expected points this robot adds per match (no fouls), schedule- and partner-adjusted. Grey = 80% likely range.', fmt: r => `<b>${f1(r.tp)}</b> <span class="sd">${range(r.tp, r.tpSd)}</span>` },
+      { key: 'trend', label: 'Trend', title: 'Improving / steady / slipping at this event (only when clearly beyond match noise)', sortVal: r => { const t = trendOf(r.key).within; return t ? t.delta : null; }, fmt: r => trendArrow(r.key) },
+      { key: 'sure', label: 'Sure', title: 'How sure the rating is (uncertainty vs. spread between teams)', sortVal: r => r.tpSd, fmt: r => surePill(r.tpSd) },
     ];
     if (has('auto')) cols.push({ key: 'auto', label: 'Auto', n: 1, fmt: r => f1(r.auto) });
     if (has('fuel')) cols.push({ key: 'fuel', label: 'Fuel', n: 1, fmt: r => f1(r.fuel) });
@@ -396,6 +413,7 @@
         <input id="teamFilter" placeholder="Filter team / name / notes" value="${esc(S.filter)}" style="width:240px">
         <label><input type="checkbox" id="hidePicked" ${S.hidePicked ? 'checked' : ''}> Hide picked</label>
         <span class="spacer"></span>
+        <button class="btn small" data-act="print-picks">Print pick list</button>
         <button class="btn small" data-act="clear-picked">Clear picks</button>
       </div>
       ${best.length ? `<div class="grid cols-3" style="margin-bottom:14px">${best.map((r, i) => `<div class="card ${i === 0 ? 'hl' : ''}">
@@ -479,6 +497,47 @@
     return null;
   }
 
+  // Fill empty slots with the most likely choices, in selection order: an empty captain slot
+  // gets the best-ranked team not yet placed, an empty pick slot the best available by pick
+  // score (an assumption: other alliances may value robots differently).
+  function projectSlots(slots, pickOrder) {
+    const out = slots.map(sl => sl.slice()), proj = slots.map(sl => sl.map(() => false));
+    const placed = new Set(out.flat().filter(Boolean));
+    const seeds = seedOrder();
+    const fill = (k, j) => {
+      if (out[k][j]) return;
+      const t = (j === 0 ? seeds : pickOrder).find(x => !placed.has(x));
+      if (t) { out[k][j] = t; proj[k][j] = true; placed.add(t); }
+    };
+    for (let k = 0; k < out.length; k++) { fill(k, 0); fill(k, 1); }
+    for (let k = out.length - 1; k >= 0; k--) fill(k, 2);
+    return { slots: out, proj };
+  }
+
+  function allianceOdds(slots) {
+    const als = slots.map(sl => sl.filter(Boolean));
+    if (als.some(x => !x.length)) return null;
+    return Sim.playoffOdds(S.R, als, { nSims: 3000, seed: 7 });
+  }
+
+  // Best next pick for the alliance whose turn it is: try the strongest available robots and
+  // keep the one that most raises that alliance's chance to win the event.
+  function bestNextPicks(a, next, pickOrder) {
+    if (!next || next.j === 0) return null;
+    const key = JSON.stringify(a.slots) + '|' + next.k + next.j + '|' + (S.computeMs || 0);
+    if (S.bestPickCache && S.bestPickCache.key === key) return S.bestPickCache.val;
+    const placed = new Set(a.slots.flat().filter(Boolean));
+    const cands = pickOrder.filter(t => !placed.has(t)).slice(0, 12);
+    const val = cands.map(t => {
+      const trial = a.slots.map(sl => sl.slice());
+      trial[next.k][next.j] = t;
+      const odds = allianceOdds(projectSlots(trial, pickOrder).slots);
+      return { team: t, pWin: odds ? odds[next.k].pWin : null, pFinal: odds ? odds[next.k].pFinal : null };
+    }).filter(x => x.pWin != null).sort((x, y) => y.pWin - x.pWin);
+    S.bestPickCache = { key, val };
+    return val;
+  }
+
   function renderAlliances() {
     const a = allianceState();
     const exp = expectedCaptains(a);
@@ -494,18 +553,26 @@
         <span class="sd">${f1(r.pickScore)}</span>${r.relQ != null && r.relQ > 0.1 ? ` <span class="pill bad" title="${esc(r.problemText)}">${pct(1 - r.relQ)}</span>` : ''}
         ${opts.removable ? `<button class="x" data-unpick="${esc(t)}" title="Back to available">×</button>` : ''}</div>`;
     };
-    // Alliance strength = expected points per match from its robots (reliability included).
-    const strengths = a.slots.map(sl => { const ts = sl.filter(Boolean); return ts.length ? Model.allianceDist(S.R, ts, 'total').mu : null; });
+    // Alliance strength = expected points per match from its robots (reliability included),
+    // and playoff odds with empty slots filled by the most likely picks.
+    const pickOrder = S.R.teams.map(t => rows[t]).filter(r => r.tp != null).sort((x, y) => y.pickScore - x.pickScore).map(r => r.key);
+    const P = projectSlots(a.slots, pickOrder);
+    const odds = allianceOdds(P.slots);
+    const anyProj = P.proj.some(r => r.some(Boolean));
+    const strengths = P.slots.map(sl => { const ts = sl.filter(Boolean); return ts.length ? Model.allianceDist(S.R, ts, 'total').mu : null; });
+    const best = bestNextPicks(a, next, pickOrder);
     const order = strengths.map((v, k) => [v, k]).filter(x => x[0] != null).sort((x, y) => y[0] - x[0]).map(x => x[1]);
     const cards = a.slots.map((sl, k) => {
       const slot = j => {
         const t = sl[j];
         const isNext = next && next.k === k && next.j === j;
-        return `<div class="slot ${j === 0 ? 'cap' : ''} ${isNext ? 'next' : ''}" data-slot="${k}:${j}">${t ? chip(t, { removable: true }) : `<span class="sd">${SLOT_NAMES[j]}${isNext ? ' — next' : ''}</span>`}</div>`;
+        const pt = P.proj[k][j] ? P.slots[k][j] : null;
+        return `<div class="slot ${j === 0 ? 'cap' : ''} ${isNext ? 'next' : ''}" data-slot="${k}:${j}">${t ? chip(t, { removable: true }) : `<span class="sd">${SLOT_NAMES[j]}${isNext ? ' — next' : ''}${pt ? ` · <i title="Projected: most likely choice for this slot">likely ${esc(tnum(pt))}</i>` : ''}</span>`}</div>`;
       };
       const sv = strengths[k];
       return `<div class="card alliance-card ${sl.some(ours) ? 'hl' : ''}">
         <h3>Alliance ${k + 1}${sv != null ? ` <span class="sd" style="text-transform:none;letter-spacing:0">· ${f1(sv, 0)} pts${order.length > 1 ? ' · #' + (order.indexOf(k) + 1) + ' strongest' : ''}</span>` : ''}</h3>
+        ${odds ? `<div class="odds" title="Chance to win the event / reach the finals, from simulating the playoff bracket${P.proj[k].some(Boolean) ? ' (includes projected picks)' : ''}"><b>${pct(odds[k].pWin)}</b> win event · ${pct(odds[k].pFinal)} reach finals${P.proj[k].some(Boolean) ? ' <span class="sd">(projected)</span>' : ''}</div>` : ''}
         ${slot(0)}${slot(1)}${slot(2)}</div>`;
     }).join('');
     const placed = new Set(a.slots.flat().filter(Boolean));
@@ -522,6 +589,12 @@
       </div>
       <p class="help">Alliances start empty — drag teams in as they're announced (onto any slot, between slots, or back to the list; dropping on a filled slot swaps). <b>Add ▸</b> fills the next slot in selection order.
         The <span class="pill good">captain · A#</span> tags show who would captain each alliance right now: pick a would-be captain and the tag moves to the next-ranked team. Strength = expected points per match of the robots placed.</p>
+      ${best && best.length ? `<div class="card best-pick ${a.slots[next.k].some(ours) ? 'hl' : ''}"><h3>Best next pick for Alliance ${next.k + 1}</h3>
+        <p class="help">Each candidate is tried in Alliance ${next.k + 1}'s ${SLOT_NAMES[next.j].toLowerCase()}, the remaining picks are projected, and the playoff bracket is simulated. Ranked by Alliance ${next.k + 1}'s chance to win the event.</p>
+        <div class="best-list">${best.slice(0, 5).map((b, i) => `<div class="best-row">${i === 0 ? '<span class="pill good">best</span>' : `<span class="sd">${i + 1}</span>`} ${chip(b.team, { pool: true })}
+          <span><b>${pct(b.pWin)}</b> win event <span class="sd">· ${pct(b.pFinal)} finals${i ? ' · ' + sgn(100 * (b.pWin - best[0].pWin), 1) + ' pts vs best' : ''}</span></span>
+          <button class="btn small" data-pickteam="${esc(b.team)}">Add ▸</button></div>`).join('')}</div></div>` : ''}
+      ${anyProj && odds ? '<p class="help">Win chances include <i>likely</i> picks for empty slots (best available by pick score, captains by rank) — they firm up as real picks are entered.</p>' : ''}
       <div class="sel-layout">
         <div class="alliance-grid">${cards}</div>
         <div class="card pool" data-slot="pool"><h3>Available</h3>
@@ -589,7 +662,7 @@
         <td class="sd">${played && m.comp === 'qm' ? '' : bonusTxt}</td>
         <td class="n">${actual}</td>
         <td>${m.red.concat(m.blue).map(t => { const iss = Model.robotIssue(m, t); return iss ? `<span class="pill bad" title="${esc(iss.note || '')}">${esc(tnum(t))} ${esc(issueText(iss))}</span> ` : ''; }).join('')}${surr.length ? `<span class="pill muted" title="Surrogate = an extra match the schedule needed. It earns these teams no ranking points and doesn't count toward their ranking score (their robot performance still counts toward ratings).">surrogate: ${surr.map(tnum).join(', ')}</span>` : ''}</td>
-        <td><button class="btn small" data-match="${esc(m.key)}">${played ? 'Edit' : 'Enter'}</button></td></tr>`;
+        <td style="white-space:nowrap"><button class="btn small" data-match="${esc(m.key)}">${played ? 'Edit' : 'Enter'}</button> <button class="btn small" data-act="print-match" data-key="${esc(m.key)}" title="Printable strategy sheet for this match">Sheet</button></td></tr>`;
     }).join('');
     return `<div class="toolbar">
         <select id="matchFilter">
@@ -678,7 +751,7 @@
     out.innerHTML = `${unknown.length ? `<p class="neg">Not at this event (treated as average): ${unknown.map(tnum).join(', ')}</p>` : ''}
       <div class="grid cols-2"><div class="card"><h3>Prediction</h3>
         <div class="stats">${statCard('Red win', `<span class="red-t">${pct(p.pRed, 1)}</span>`)}${statCard('Blue win', `<span class="blue-t">${pct(1 - p.pRed, 1)}</span>`)}
-        ${statCard('Score', `<span class="red-t">${f1(p.red.score, 0)}</span>–<span class="blue-t">${f1(p.blue.score, 0)}</span>`, 'no fouls')}
+        ${statCard('Score', `<span class="red-t">${f1(p.red.score, 0)}</span>–<span class="blue-t">${f1(p.blue.score, 0)}</span>`, `likely ${range(p.red.score, Model.allianceDist(S.R, red, 'total').sd, Z_SCORE)} vs ${range(p.blue.score, Model.allianceDist(S.R, blue, 'total').sd, Z_SCORE)} · no fouls`)}
         ${statCard('Exp. RP', `<span class="red-t">${f1(p.red.expRP, 2)}</span> / <span class="blue-t">${f1(p.blue.expRP, 2)}</span>`)}</div></div>
       <div class="card"><h3>Breakdown</h3><table><thead><tr><th></th><th class="n">Red</th><th class="n">Blue</th></tr></thead><tbody>
         ${g.comps.filter(c => !c.hidden && c.key !== 'fouls').map(c => comp(c.key, c.label)).join('')}
@@ -804,6 +877,130 @@
     refreshEventResults();
   }
 
+  // ---------- Trends ----------
+  // Within the event: Model.trendWithin (residual slope, reported only beyond match noise).
+  // Across the season: its rating at each earlier event vs. now (display only: weighting
+  // recent events more did not improve predictions in the 2026 backtest).
+  function trendOf(k) {
+    S.trendCache = S.trendCache || {};
+    if (S.trendCache[k]) return S.trendCache[k];
+    const R = S.R, ev = S.event;
+    const out = { within: Model.trendWithin(ev, R, k), season: null };
+    const info = ev.priorEventInfo || {};
+    const hist = ((ev.teamPriorEvents || {})[k] || []).map(e => ({ key: e, name: (info[e] || {}).name || e, start: (info[e] || {}).start || '', v: ev.priorEvents && ev.priorEvents[e] && ev.priorEvents[e].ratings[k] && ev.priorEvents[e].ratings[k].total }))
+      .filter(h => h.v != null).sort((a, b) => (a.start < b.start ? -1 : 1));
+    if (hist.length) {
+      const now = R.comps.total.mean[R.idx[k]];
+      const before = hist.reduce((a, h) => a + h.v, 0) / hist.length;
+      const ch = before > 0 ? (now - before) / before : 0;
+      out.season = { hist, now, before, change: ch, label: ch > 0.12 ? 'rising' : ch < -0.12 ? 'falling' : 'steady' };
+    }
+    return (S.trendCache[k] = out);
+  }
+  function trendArrow(k) {
+    const t = trendOf(k).within;
+    if (!t) return '<span class="sd" title="Needs 5+ clean matches">·</span>';
+    const sym = { improving: '↑', slipping: '↓', steady: '→' }[t.label];
+    return `<span class="${t.label === 'improving' ? 'pos' : t.label === 'slipping' ? 'neg' : 'sd'}" title="${t.label} at this event: about ${sgn(t.delta, 0)} pts per alliance from first to latest match">${sym}</span>`;
+  }
+  function trendText(k) {
+    const t = trendOf(k), parts = [];
+    if (t.within) parts.push(`At this event: <b>${t.within.label}</b> (about ${sgn(t.within.delta, 0)} pts per alliance from first to latest match, over ${t.within.n} clean matches${t.within.label === 'steady' ? '; within normal match-to-match noise' : ''}).`);
+    if (t.season) parts.push(`This season: ${t.season.hist.map(h => `${esc(h.name)} ${f1(h.v, 0)}`).join(' → ')} → now ${f1(t.season.now, 0)} (<b>${t.season.label}</b>; earlier events can score differently, so treat this as a rough guide).`);
+    return parts.join(' ');
+  }
+
+  // ---------- Printable reports ----------
+  // Rendered into #print and sent to the system print dialog (or "Save as PDF").
+  function printHtml(html) {
+    const el = $('#print');
+    el.innerHTML = html;
+    document.body.classList.add('printing');
+    const done = () => { document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+    window.addEventListener('afterprint', done);
+    setTimeout(() => window.print(), 50);
+  }
+
+  function reportHead(title, sub) {
+    const ev = S.event;
+    return `<div class="rp-head"><div><div class="rp-title">${title}</div><div class="rp-sub">${sub || ''}</div></div>
+      <div class="rp-meta">${esc(ev.year + ' ' + (ev.name || ev.key))}<br>${new Date().toLocaleString()}<br>TRU POWER</div></div>`;
+  }
+
+  function teamReportHtml(k) {
+    const r = teamRow(k), R = S.R, i = R.idx[k], g = S.game, ev = S.event, L = S.luck[k] || {};
+    const comps = g.comps.filter(c => !c.hidden && R.comps[c.key].available).map(c => {
+      const C = R.comps[c.key];
+      const vals = R.teams.map((_, j) => C.mean[j]).sort((a, b) => (c.lowerBetter ? a - b : b - a));
+      return `<tr><td>${c.label}</td><td class="n"><b>${f1(C.mean[i])}</b></td><td class="n">${range(C.mean[i], Math.sqrt(C.var[i]))}</td><td class="n">${vals.indexOf(C.mean[i]) + 1}/${R.teams.length}</td></tr>`;
+    }).join('');
+    const rel = reliability(k);
+    const ms = ev.matches.filter(m => m.red.includes(k) || m.blue.includes(k)).map(m => {
+      const onRed = m.red.includes(k), p = Model.predictMatch(R, m.red, m.blue);
+      const partners = (onRed ? m.red : m.blue).filter(t => t !== k).map(tnum).join(' ');
+      const opps = (onRed ? m.blue : m.red).map(tnum).join(' ');
+      let res = `win ${pct(onRed ? p.pRed : 1 - p.pRed)}`;
+      if (Model.isPlayed(m)) {
+        const mine = onRed ? m.r : m.b, th = onRed ? m.b : m.r, w = Model.winnerOf(m);
+        res = `${w === 't' ? 'T' : (w === 'r') === onRed ? 'W' : 'L'} ${mine.score}–${th.score}`;
+      }
+      const iss = Model.robotIssue(m, k);
+      return `<tr><td>${matchLabel(m)}</td><td>${onRed ? 'Red' : 'Blue'}</td><td>${partners}</td><td>${opps}</td><td class="nw">${res}</td><td>${iss ? esc(issueText(iss)) : ''}</td></tr>`;
+    }).join('');
+    const sc = r.scout, scCols = (ev.scouting && ev.scouting.columns) || [];
+    return `<div class="rp">${reportHead(`Team ${esc(tnum(k))} · ${esc(r.name)}`, 'Team report')}
+      <div class="rp-stats">
+        <div><b>${f1(r.tp)}</b><span>True Potential (pts/match)<br>likely ${range(r.tp, r.tpSd)} · ${sureOf(r.tpSd) || ''} confidence</span></div>
+        <div><b>${r.rank ? '#' + r.rank : '–'}</b><span>Rank${r.rs != null ? ' · RS ' + f1(r.rs, 2) + ' · ' + r.rec : ''}</span></div>
+        <div><b>#${r.trueRank || '–'}</b><span>True rank (neutral schedule)</span></div>
+        <div><b>${sgn(r.luck)}</b><span>Schedule luck, RP/match<br>luck-adj. RS ${f1(r.adjRS, 2)}</span></div>
+        <div><b>${r.relQ == null ? '—' : pct(1 - r.relQ)}</b><span>Reliability (clean matches)<br>problems ${rel.list.length}/${rel.played}</span></div>
+        <div><b>${r.p8 != null ? pct(r.p8) : '…'}</b><span>Chance of top 8<br>proj. rank ${f1(r.expRank, 1)}</span></div>
+      </div>
+      <div class="rp-cols">
+        <div><h4>Ratings</h4><table><thead><tr><th></th><th class="n">Value</th><th class="n">Likely range</th><th class="n">Rank</th></tr></thead><tbody>${comps}</tbody></table>
+          ${trendText(k) ? `<h4>Trend</h4><p>${trendText(k)}</p>` : ''}
+          ${sc && sc.n ? `<h4>Scouting (${sc.n} entries)</h4><table><tbody>${scCols.filter(c => sc[c] != null).map(c => `<tr><td>${esc(c)}</td><td class="n">${f1(sc[c])}</td></tr>`).join('')}</tbody></table>` : ''}
+          <h4>Notes</h4><div class="rp-notes">${esc((ev.notes || {})[k] || '') || '&nbsp;'}</div></div>
+        <div><h4>Matches</h4><table><thead><tr><th>Match</th><th></th><th>Partners</th><th>Opponents</th><th>Result</th><th>Problem</th></tr></thead><tbody>${ms}</tbody></table></div>
+      </div></div>`;
+  }
+
+  // Strategy sheet: both alliances robot by robot, plus what it takes to earn each bonus RP.
+  function matchSheetHtml(m) {
+    const R = S.R, g = S.game, ev = S.event, p = Model.predictMatch(R, m.red, m.blue);
+    const thr = R.thr || {};
+    const side = (teams, color, pred, pWin) => {
+      const rows = teams.map(t => {
+        const r = teamRow(t);
+        const note = ((ev.notes || {})[t] || '').slice(0, 60);
+        return `<tr><td><b>${esc(tnum(t))}</b> ${esc(r.name).slice(0, 18)}</td><td class="n">${f1(r.tp)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${trendArrow(t)}</td><td>${esc(note)}</td></tr>`;
+      }).join('');
+      const bonus = g.bonuses.map(b => {
+        const d = Model.allianceDist(R, teams, b.comp);
+        const need = thr[b.key] != null ? thr[b.key] - d.mu : null;
+        const what = { fuel: 'fuel', tower: 'tower pts', autoFuel: 'auto fuel' }[b.comp] || b.comp;
+        return `<li><b>${b.label}</b> ${pct(pred.bonus[b.key])} — expect ${f1(d.mu, 0)} ${what} (need ${thr[b.key]})${need != null && need > 0 ? `: <b>${f1(need, 0)} short</b>` : ': on track'}</li>`;
+      }).join('');
+      const sd = Model.allianceDist(R, teams, 'total').sd;
+      return `<div class="rp-side ${color}"><h4>${color === 'red' ? 'Red' : 'Blue'} alliance — win ${pct(pWin)}, score ${f1(pred.score, 0)} (likely ${range(pred.score, sd, Z_SCORE)}), exp. RP ${f1(pred.expRP, 2)}</h4>
+        <table><thead><tr><th>Team</th><th class="n">TP</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Reliab.</th><th class="n">Trend</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+        ${bonus ? `<ul>${bonus}</ul>` : ''}</div>`;
+    };
+    return `<div class="rp">${reportHead(`${matchLabel(m)} strategy sheet`, Model.isPlayed(m) ? `Played: ${m.r.score}–${m.b.score}` : 'Upcoming match')}
+      ${side(m.red, 'red', p.red, p.pRed)}${side(m.blue, 'blue', p.blue, 1 - p.pRed)}
+      <h4>Plan</h4><div class="rp-notes tall">&nbsp;</div></div>`;
+  }
+
+  function pickListHtml() {
+    const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
+    const rows = S.R.teams.filter(k => k !== ot).map(teamRow).filter(r => r.tp != null && !r.picked).sort((a, b) => b.pickScore - a.pickScore);
+    return `<div class="rp">${reportHead('Pick list', 'Ranked by pick score: True Potential × reliability − fouls given away')}
+      <table class="rp-list"><thead><tr><th>#</th><th>Team</th><th class="n">Pick score</th><th class="n">TP (likely)</th><th class="n">Reliab.</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Rank</th><th class="n">Trend</th><th>Notes</th><th>✓</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(tnum(r.key))}</b> ${esc(r.name).slice(0, 20)}</td><td class="n"><b>${f1(r.pickScore)}</b></td><td class="n">${f1(r.tp)} <span>(${range(r.tp, r.tpSd)})</span></td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${r.rank || '–'}</td><td class="n">${trendArrow(r.key)}</td><td>${esc(((S.event.notes || {})[r.key] || '').slice(0, 40))}</td><td class="box"></td></tr>`).join('')}
+      </tbody></table></div>`;
+  }
+
   // ---------- Team detail ----------
   function openTeam(k) {
     if (!S.R || S.R.idx[k] === undefined) return;
@@ -846,9 +1043,10 @@
     }).join('');
     const sc = r.scout;
     const scCols = (ev.scouting && ev.scouting.columns) || [];
-    openModal(`<h2>${teamLink(k)} ${esc(r.name)} <a data-star="${k}" style="font-size:20px">${r.starred ? '★' : '☆'}</a></h2>
+    openModal(`<h2>${teamLink(k)} ${esc(r.name)} <a data-star="${k}" style="font-size:20px">${r.starred ? '★' : '☆'}</a>
+        <button class="btn small" data-act="print-team" data-key="${esc(k)}" style="margin-left:10px">Print report</button></h2>
       <div class="stats" style="margin-bottom:14px">
-        ${statCard('True Potential', f1(r.tp), '± ' + f1(r.tpSd))}
+        ${statCard('True Potential', f1(r.tp), 'likely ' + range(r.tp, r.tpSd) + ' · ' + (sureOf(r.tpSd) || '') + ' confidence')}
         ${statCard('Rank', r.rank ? '#' + r.rank : '–', r.rs != null ? 'RS ' + f1(r.rs, 2) + ' · ' + r.rec : '')}
         ${statCard('True rank', '#' + r.trueRank)}
         ${statCard('Luck-adj. RS', f1(r.adjRS, 2))}
@@ -858,6 +1056,7 @@
       <div class="split">
         <div><h3>Ratings</h3><table><thead><tr><th></th><th class="n">Now</th><th class="n">Rank</th><th class="n" title="Average of earlier events">Prior</th><th class="n" title="Matches of data at this event">Data</th></tr></thead><tbody>${compRows}</tbody></table>
           <p class="help">${ev.priorMeta && ev.priorMeta.count && ev.priorMeta.count[k] ? `Prior from ${ev.priorMeta.count[k]} earlier event(s).` : 'No earlier-event data — starts near event average.'} Plain OPR: ${f1(r.opr)}.</p>
+          ${trendText(k) ? `<p class="help">${trendText(k)}</p>` : ''}
           ${(() => { const rel = reliability(k); if (!rel.played) return ''; if (!rel.list.length) return `<p class="help">Reliability: no problems recorded in ${rel.played} matches.</p>`;
             return `<p class="help"><b class="neg">Reliability: problems in ${rel.list.length} of ${rel.played} matches</b> — ${rel.list.map(x => `${matchLabel(x.m)} ${esc(issueText(x.iss))}${x.iss.note ? ' (' + esc(x.iss.note) + ')' : ''}`).join('; ')}. Those matches are left out of its rating.</p>`; })()}
           ${L ? `<p class="help">Schedule: partners vs. opponents ${sgn(L.tailwind, 1)} pts/match vs. average. Expected RS on this schedule ${f1(L.eSched, 2)} vs. ${f1(L.eRand, 2)} on a random one.</p>` : ''}
@@ -1217,6 +1416,9 @@
       S.event.matches = S.event.matches.filter(x => x.key !== el.dataset.key); persist(); closeModal(); recompute();
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
+    'print-team': el => printHtml(teamReportHtml(el.dataset.key)),
+    'print-match': el => { const m = S.event.matches.find(x => x.key === el.dataset.key); if (m) printHtml(matchSheetHtml(m)); },
+    'print-picks': () => printHtml(pickListHtml()),
     'reset-alliances': el => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to reset'; return; }
       const a = allianceState(); a.slots = []; allianceState(); persist(); render();
@@ -1273,7 +1475,7 @@
     if (el.dataset.sort) {
       const id = el.closest('table').dataset.table;
       const [k, d] = S.sort[id] || [];
-      const lowFirst = ['num', 'rank', 'trueRank', 'expRank', 'fouls', 'gap', 'range', 'name', 'pickNo', 'problems'].includes(el.dataset.sort);
+      const lowFirst = ['num', 'rank', 'trueRank', 'expRank', 'fouls', 'gap', 'range', 'name', 'pickNo', 'problems', 'sure'].includes(el.dataset.sort);
       S.sort[id] = [el.dataset.sort, k === el.dataset.sort ? -d : lowFirst ? 1 : -1];
       render();
       return;

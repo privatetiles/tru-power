@@ -18,6 +18,7 @@
     lambdaNew: 1.5,     // prior strength for teams with no history
     useReliability: true, // recorded breakdowns lower a team's expected contribution in predictions
     relPrior: 6,          // a team's breakdown rate is blended with the event's as if from 6 matches
+    relDecay: 0.85,       // a problem k matches ago counts 0.85^k: recent reliability matters more
     prevYearShrink: 0.9, // how much of last season's relative strength carries over (2026 backtest)
     lambdaPrevYear: 3,   // prior strength for a last-season-only prior
     newFactor: 0.85,    // teams with no history start at 85% of the event's average contribution
@@ -229,14 +230,18 @@
     const played = new Float64Array(n), probs = new Float64Array(n), loss = new Float64Array(n);
     const idx = {};
     teams.forEach((t, i) => { idx[t] = i; });
-    for (const m of event.matches) {
-      if (!isPlayed(m) || (include && !include(m))) continue;
+    // Walk each team's matches newest first so older ones are discounted by relDecay^age.
+    const seen = new Float64Array(n);
+    const ms = event.matches.filter(m => isPlayed(m) && (!include || include(m)));
+    for (let a = ms.length - 1; a >= 0; a--) {
+      const m = ms[a];
       for (const t of m.red.concat(m.blue)) {
         const i = idx[t];
         if (i === undefined) continue;
-        played[i]++;
+        const w = Math.pow(settings.relDecay, seen[i]++);
+        played[i] += w;
         const iss = robotIssue(m, t);
-        if (iss) { probs[i]++; loss[i] += lossOf(iss); }
+        if (iss) { probs[i] += w; loss[i] += w * lossOf(iss); }
       }
     }
     let P = 0, Q = 0, Lsum = 0;
@@ -252,6 +257,31 @@
       }
     }
     return { q, L, factor, played, problems: probs, any: Q > 0 && !!settings.useReliability };
+  }
+
+  // ---------- Trend within an event ----------
+  // Alliance results minus predictions over a team's clean matches. If the team improves by
+  // D points its alliances beat predictions by about D, while partners' swings average out,
+  // so the slope of these residuals measures the team's own change. A trend is reported only
+  // when |t| > 2.2, i.e. clearly beyond match-to-match noise (about 1 in 20 unchanged teams flagged).
+  function trendWithin(event, R, k) {
+    const pts = [];
+    for (const m of event.matches) {
+      if (m.comp !== QUAL || !isPlayed(m)) continue;
+      const side = m.red.includes(k) ? 'r' : m.blue.includes(k) ? 'b' : null;
+      if (!side || robotIssue(m, k) || m[side].total == null) continue;
+      pts.push(m[side].total - allianceDist(R, side === 'r' ? m.red : m.blue, 'total').mu);
+    }
+    const n = pts.length;
+    if (n < 5) return null;
+    const xm = (n - 1) / 2, ym = pts.reduce((a, b) => a + b, 0) / n;
+    let sxy = 0, sxx = 0, rss = 0;
+    pts.forEach((y, x) => { sxy += (x - xm) * (y - ym); sxx += (x - xm) ** 2; });
+    const slope = sxy / sxx;
+    pts.forEach((y, x) => { rss += (y - ym - slope * (x - xm)) ** 2; });
+    const se = Math.sqrt(rss / Math.max(1, n - 2) / sxx);
+    const t = se > 0 ? slope / se : 0;
+    return { delta: slope * (n - 1), t, n, label: t > 2.2 ? 'improving' : t < -2.2 ? 'slipping' : 'steady' };
   }
 
   // Plain least-squares OPR (tiny ridge so it exists early), for reference/comparison.
@@ -466,7 +496,7 @@
   }
 
   const api = {
-    DEFAULT_SETTINGS, teamCmp, robotIssue, fit, eventThresholds, predictMatch, predictAlliance, allianceDist, bonusMode,
+    DEFAULT_SETTINGS, teamCmp, robotIssue, trendWithin, fit, eventThresholds, predictMatch, predictAlliance, allianceDist, bonusMode,
     standings, allianceRP, winnerOf, isPlayed, sortMatches, matchOrder,
   };
   root.Model = api;

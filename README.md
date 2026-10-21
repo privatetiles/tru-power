@@ -80,6 +80,28 @@ This is the most important test. It covers every 2026 event on TBA, 18,371 decid
 - Win chances are well calibrated: when it says 75%, the favourite wins about 77% of the time.
 - Schedule luck averaged ±0.23 RP per match. Removing it changes about 1.3 of the top-8 seeds at a typical event.
 
+#### Held-out season: 2025 (never used for tuning)
+
+All settings were tuned on 2026, so 2026 accuracy is slightly optimistic. To check that the gains generalize, every setting was frozen and the model was run on the 2025 season, a different game (REEFSCAPE) the model had never seen.
+
+| 2025 official events (14,686 matches) | Winners called | Brier |
+|---|---|---|
+| **TRU POWER** | **78.1%** | **0.1493** |
+| Statbotics EPA (re-implemented) | 78.1% | 0.1523 |
+| Plain OPR | 74.7% | 0.1709 |
+
+The result matches 2026: a tie with EPA on picking winners, and significantly better probabilities (paired Brier difference 0.0030 ± 0.0013, z = 4.4).
+
+#### Are the ranges honest?
+
+| Check | Result | Target |
+|---|---|---|
+| Alliance score inside the shown 80% range (2026, after widening for fat tails) | 77.6% at z = 1.28, so ranges now use z = 1.35 | 80% |
+| Final rank inside the forecast's 80% range, predicted at mid-event (2026) | 83.4% | 80% |
+| True strength inside a rating's 80% "likely range" (simulated events) | 89.5% | 80% |
+
+The ranges err on the cautious side, as intended.
+
 #### 2019 season
 
 The 2019 backtest uses TBA's public archive, so it is scores only.
@@ -162,4 +184,13 @@ Until then, any other year falls back to a generic model that uses total score p
   - A toggle sorts the available list by **Best robots** (pick score) or **Highest ranked** (event ranking). The choice is remembered.
   - Green **captain · A#** tags in the available list show who would captain each alliance right now. When a would-be captain is placed as a pick, the tag moves to the next-ranked team. For example, if Alliance 1 picks the #2 seed, #2 loses its tag and #9 becomes the expected captain of Alliance 8.
   - Each alliance shows its expected points per match, and placed teams are marked as picked on Best Picks.
+- **Likely ranges & confidence:** ratings show an 80% likely range (e.g. "likely 78–106") and a High / Medium / Low confidence tag. Predicted scores show ranges too.
+- **Trends:**
+  - **This event:** each team is marked improving ↑, steady → or slipping ↓, but only when the change is clearly beyond match noise. About 6% of unchanged teams get flagged, and 5 of 6 real mid-event upgrades were caught in tests.
+  - **This season:** the team page shows its rating at each earlier event.
+  - **Reliability:** recent breakdowns count more than old ones.
+- **Playoff odds:**
+  - Alliance Selection shows each alliance's chance to win the event and reach the finals, by simulating the double-elimination bracket. Empty slots are filled with likely picks.
+  - **Best next pick** ranks candidates by how much they raise the picking alliance's chance to win the event.
+- **Printable reports:** a team report (team page → Print report), a match strategy sheet (Matches → Sheet), and a pick list with checkboxes (Best Picks → Print pick list). Use the print dialog's *Save as PDF* to share them.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.

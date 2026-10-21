@@ -209,3 +209,43 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .seg button { border: 0; background: var(--panel); padding: 5px 12px; cursor: pointer; color: var(--muted); }
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button.on { background: var(--accent); color: #fff; font-weight: 600; }
+/* ---------- Printable reports ---------- */
+#print { display: none; }
+@media print {
+  @page { margin: 12mm; }
+  body.printing > *:not(#print) { display: none !important; }
+  body.printing #print { display: block; }
+  body.printing { background: #fff; color: #000; font-size: 10.5pt; }
+}
+.rp { color: #000; font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; }
+.rp table { width: 100%; border-collapse: collapse; margin: 2mm 0 4mm; font-variant-numeric: tabular-nums; }
+.rp th, .rp td { border-bottom: 0.5pt solid #bbb; padding: 1.2mm 1.5mm; text-align: left; font-size: 9.5pt; white-space: normal; position: static; background: none; color: #000; }
+.rp th { font-size: 8pt; text-transform: uppercase; letter-spacing: .04em; color: #444; }
+.rp td.n, .rp th.n { text-align: right; }
+.rp h4 { margin: 4mm 0 1mm; font-size: 10.5pt; }
+.rp-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1.5pt solid #000; padding-bottom: 2mm; margin-bottom: 3mm; }
+.rp-title { font-size: 18pt; font-weight: 700; }
+.rp-sub { color: #444; }
+.rp-meta { text-align: right; font-size: 8.5pt; color: #444; }
+.rp-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 2mm; }
+.rp-stats > div { border: 0.5pt solid #999; border-radius: 2mm; padding: 2mm; }
+.rp-stats b { display: block; font-size: 15pt; }
+.rp-stats span { font-size: 8.5pt; color: #333; }
+.rp-cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 5mm; }
+.rp-notes { border: 0.5pt solid #999; border-radius: 2mm; min-height: 18mm; padding: 2mm; white-space: pre-wrap; }
+.rp-notes.tall { min-height: 45mm; }
+.rp-side { border: 1pt solid #999; border-radius: 2mm; padding: 2mm 3mm; margin-bottom: 3mm; break-inside: avoid; }
+.rp-side.red { border-left: 4pt solid #c0392b; }
+.rp-side.blue { border-left: 4pt solid #2b62d9; }
+.rp-side ul { margin: 1mm 0 0; padding-left: 5mm; font-size: 9.5pt; }
+.rp-list td.box { width: 6mm; border: 0.5pt solid #777; }
+.rp-list tr { break-inside: avoid; }
+/* Playoff odds and best-pick panel */
+.alliance-card .odds { font-size: 12.5px; margin: -4px 0 4px; }
+.alliance-card .odds b { color: var(--accent); }
+.slot i { font-style: normal; opacity: .75; }
+.best-pick { margin-bottom: 12px; }
+.best-list { display: grid; gap: 6px; }
+.best-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.best-row .btn { margin-left: auto; }
+.rp td.nw { white-space: nowrap; }

@@ -227,7 +227,57 @@
     return out;
   }
 
-  const api = { simulateRankings, scheduleLuck };
+  // ---------- Playoffs ----------
+  // Chance each alliance wins the event. Single matches use the same model as
+  // qualification predictions (alliance strength = sum of its robots, reliability included);
+  // a best-of-3 final is won with p²(3 − 2p). Eight alliances play the FRC double-elimination
+  // bracket (2023+): upper 1v8, 4v5, 2v7, 3v6; losers drop to the lower bracket; finals best
+  // of 3. Other sizes play a seeded single-elimination bracket with best-of-3 finals.
+  function playoffOdds(R, alliances, opts) {
+    opts = opts || {};
+    const nSims = opts.nSims || 4000;
+    const rng = LA.makeRng(opts.seed || 99);
+    const n = alliances.length;
+    const p = Array.from({ length: n }, () => new Float64Array(n));
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const q = Model.predictMatch(R, alliances[i], alliances[j]).pRed;
+      p[i][j] = q; p[j][i] = 1 - q;
+    }
+    const bo3 = q => q * q * (3 - 2 * q);
+    const play = (a, b) => (rng.uniform() < p[a][b] ? [a, b] : [b, a]);   // [winner, loser]
+    const final = (a, b) => (rng.uniform() < bo3(p[a][b]) ? a : b);
+    const wins = new Float64Array(n), finals = new Float64Array(n);
+    for (let s = 0; s < nSims; s++) {
+      let champ, f1, f2;
+      if (n === 8) {
+        const [w1, l1] = play(0, 7), [w2, l2] = play(3, 4), [w3, l3] = play(1, 6), [w4, l4] = play(2, 5);
+        const [w5] = play(l1, l2), [w6] = play(l3, l4);          // lower round 1 (losers out)
+        const [w7, l7] = play(w1, w2), [w8, l8] = play(w3, w4);  // upper round 2
+        const [w9] = play(l7, w6), [w10] = play(l8, w5);         // lower round 2
+        const [w11, l11] = play(w7, w8);                         // upper final
+        const [w12] = play(w10, w9);                             // lower round 3
+        const [w13] = play(l11, w12);                            // lower final
+        f1 = w11; f2 = w13; champ = final(w11, w13);
+      } else {
+        let alive = alliances.map((_, i) => i);
+        while (alive.length > 2) {
+          const next = [];
+          let size = 1; while (size < alive.length) size *= 2;
+          const byes = size - alive.length;
+          for (let i = 0; i < byes; i++) next.push(alive[i]);
+          const rest = alive.slice(byes);
+          for (let i = 0; i < rest.length / 2; i++) next.push(play(rest[i], rest[rest.length - 1 - i])[0]);
+          alive = next.sort((x, y) => x - y);
+        }
+        f1 = alive[0]; f2 = alive.length > 1 ? alive[1] : alive[0];
+        champ = alive.length > 1 ? final(f1, f2) : f1;
+      }
+      wins[champ]++; finals[f1]++; if (f2 !== f1) finals[f2]++;
+    }
+    return alliances.map((_, i) => ({ pWin: wins[i] / nSims, pFinal: finals[i] / nSims }));
+  }
+
+  const api = { simulateRankings, scheduleLuck, playoffOdds };
   root.Sim = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

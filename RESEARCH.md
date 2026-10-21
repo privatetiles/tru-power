@@ -166,3 +166,28 @@ The Statbotics API was down (HTTP 500/503), so EPA was re-implemented from their
 **Paired comparison:** TRU POWER's Brier is better by 0.0050 ± 0.0014 (95% CI; z = 7.1), so the difference is statistically significant. Picking the winner is a tie; TRU POWER's win probabilities are better calibrated and sharper.
 
 **Caveat:** the real Statbotics numbers could differ slightly from this re-implementation (its normalized-EPA mapping and data cleaning were not replicated).
+
+---
+
+## 11. Round 5: held-out testing, honest ranges, trends, alliances, reports
+
+**Held-out season (2025, frozen settings).** On official events, TRU POWER called 78.1% with a Brier of 0.1493. EPA (re-implemented) got 78.1% / 0.1523, and OPR 74.7% / 0.1709. Paired Brier advantage over EPA: 0.0030 ± 0.0013 (z = 4.4). The gains from tuning on 2026 carry over to an unseen game.
+
+**Range calibration**
+- **Alliance-score 80% intervals at z = 1.2816:** covered 77.6% (2026) and 78.3% (2025). Score errors have fat tails (breakdowns, fouls, jams), so displayed score ranges use z = 1.35.
+- **Halfway rank forecast, 80% ranges:** covered 83.4% of final ranks (2026 official) and 84.0% (offseason). The average absolute rank error is 3.9, which is slightly conservative.
+- **Rating 80% ranges vs. known truth (simulated):** 89.5%, also conservative.
+
+**Alliance compatibility (is scoring additive?)**
+- **Method:** regress alliance residuals on the squared alliance strength, using OLS ratings so shrinkage doesn't create a fake effect.
+- **2026:** +2% for the strongest alliances (t = 9).
+- **2025:** −3% (t = −7), consistent with contention for game pieces.
+- **Conclusion:** the effect is real but tiny, a few points per match, so alliance strength stays additive.
+- **Consequence:** whole-alliance evaluation is done through playoff bracket simulation instead.
+- **Note:** with ridge ratings (λ = 1.5) the same test shows a spurious +16%, a shrinkage artifact worth remembering.
+
+**Trend detection**
+- **Method:** the slope of a team's alliance residuals over its clean matches.
+- **Threshold:** at |t| > 1.5, 15.8% of unchanged teams were falsely flagged. At |t| > 2.2 that drops to 6.4%, and 5 of 6 injected +60-point upgrades are still caught.
+- **Usage:** display only, since recency weighting did not improve 2026 predictions (§9).
+- **Reliability:** reliability now discounts problems by 0.85 per match of age.
