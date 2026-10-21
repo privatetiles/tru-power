@@ -28,7 +28,7 @@
 
 If you have no internet at all, use **Data → Create event manually**. Then paste the schedule in the Matches tab (`Q1 254 1678 971 118 148 1323` per line).
 
-**Keyboard:** keys `1`–`9` switch tabs; `Esc` closes a popup; `Enter` saves a match.
+**Keyboard:** keys `0`–`9` switch tabs (`0` = Data); `Esc` closes a popup; `Enter` saves a match.
 
 ## What the numbers mean
 
@@ -212,6 +212,11 @@ Until then, any other year falls back to a generic model that uses total score p
   - Alliance Selection shows each alliance's chance to win the event and reach the finals, by simulating the double-elimination bracket. Empty slots are filled with likely picks.
   - **Best next pick** ranks candidates by how much they raise the picking alliance's chance to win the event.
 - **Printable reports:** a team report (team page → Print report), a match strategy sheet (Matches → Sheet), and a pick list with checkboxes (Best Picks → Print pick list). Use the print dialog's *Save as PDF* to share them.
+- **Scout mode** (Scout tab): one scout per robot.
+  - Set your name and seat (Red 1–3 / Blue 1–3) once. Count auto and teleop fuel with big **+1 / +5 / −1** buttons, or **A/Z** and **S/X** on the keyboard.
+  - Mark breakdowns, note defense, and press **Enter** to save and jump to your next match.
+  - The **Scouting quality** panel adds up the three scouted robots on each alliance and compares the sum with the official fuel count. It shows your typical miss, each scout's habitual over- or under-count, and the matches worth rechecking.
+  - Merge laptops with Export / Import; the newest entry per robot, match and scout wins.
 - **Scouted fuel per robot:** the match editor has a **Fuel** box for each robot. Typed counts feed that robot's fuel rating directly, so it no longer has to be estimated from the alliance total.
   - On simulated events, scouting after about 3 matches raised the fuel rating's correlation with true ability from 0.73 to 0.92, roughly what 12 matches of scores alone give.
   - It still helped with sloppy (±30%) counts. Measure it with `node tools/scouting-value.js`.

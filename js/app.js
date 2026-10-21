@@ -184,7 +184,7 @@
     renderEventSelect();
     renderStatus();
     if (!S.event && S.tab !== 'data') { main.innerHTML = emptyState(); return; }
-    const fn = { overview: renderOverview, teams: renderTeams, picks: renderPicks, alliances: renderAlliances, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
+    const fn = { scout: renderScout, overview: renderOverview, teams: renderTeams, picks: renderPicks, alliances: renderAlliances, luck: renderLuck, matches: renderMatches, forecast: renderForecast, predict: renderPredict, data: renderData }[S.tab];
     main.innerHTML = fn();
     if (S.tab === 'predict') updatePrediction();
     if (S.tab === 'data') loadCatalogueAndShow(false);
@@ -1097,6 +1097,146 @@
 
   // ---------- Scouted per-robot fuel (match editor) ----------
   const SCOUT_FUEL = 'Fuel (scouted)';
+  const SCOUT_AUTO = 'Auto fuel (scouted)';
+  const SCOUT_DEF = 'Defense played (0-2)';
+
+  // ---------- Scout mode ----------
+  // One scout watches one robot (their seat: Red 1–3 / Blue 1–3) and counts its fuel.
+  const SEATS = [['r', 0, 'Red 1'], ['r', 1, 'Red 2'], ['r', 2, 'Red 3'], ['b', 0, 'Blue 1'], ['b', 1, 'Blue 2'], ['b', 2, 'Blue 3']];
+  function scoutState() {
+    S.sc = S.sc || { auto: 0, tele: 0, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '' };
+    return S.sc;
+  }
+  function scoutRow(matchKey, team) {
+    const sc = S.event.scouting;
+    return sc && sc.rows ? sc.rows.find(r => r.match === matchKey && r.team === team && r.values[SCOUT_FUEL] != null && (r.scout || '') === (S.settings.scoutName || '')) : null;
+  }
+  function scoutMatches() { return S.event.matches.filter(m => m.comp === 'qm' && m.red.length && m.blue.length); }
+  function seatTeam(m, seat) { const [side, k] = (SEATS.find(x => x[2] === seat) || SEATS[0]); return (side === 'r' ? m.red : m.blue)[k]; }
+  function currentScoutMatch() {
+    const ms = scoutMatches();
+    const seat = S.settings.scoutSeat || 'Red 1';
+    let m = ms.find(x => x.key === S.scoutMatch);
+    if (!m) m = ms.find(x => !scoutRow(x.key, seatTeam(x, seat))) || ms[ms.length - 1];
+    S.scoutMatch = m && m.key;
+    return m;
+  }
+  function loadScoutFor(m) {
+    const st = scoutState();
+    const t = m && seatTeam(m, S.settings.scoutSeat || 'Red 1');
+    const row = m && t ? scoutRow(m.key, t) : null;
+    const iss = m && t ? Model.robotIssue(m, t) : null;
+    Object.assign(st, { auto: row ? row.values[SCOUT_AUTO] || 0 : 0, tele: row ? row.values[SCOUT_FUEL] - (row.values[SCOUT_AUTO] || 0) : 0,
+      def: row ? row.values[SCOUT_DEF] || 0 : 0, note: row ? row.note || '' : '',
+      status: iss ? iss.type : 'ok', when: (iss && iss.when) || 'teleop', what: (iss && iss.what) || 'drivetrain', loadedFor: m && m.key + '|' + t });
+  }
+  function bumpCount(which, d) {
+    const st = scoutState();
+    st[which] = Math.max(0, st[which] + d);
+    const el = document.querySelector(`[data-count="${which}"]`);
+    if (el) el.textContent = st[which];
+    const tot = document.querySelector('#scoutTotal');
+    if (tot) tot.textContent = st.auto + st.tele;
+  }
+  function saveScout() {
+    const m = currentScoutMatch(), st = scoutState();
+    if (!m) return;
+    const t = seatTeam(m, S.settings.scoutSeat || 'Red 1');
+    const ev = S.event;
+    const sc = ev.scouting = ev.scouting || { columns: [], rows: [], map: {}, show: {} };
+    const who = S.settings.scoutName || '';
+    sc.rows = sc.rows.filter(r => !(r.match === m.key && r.team === t && (r.scout || '') === who && r.values[SCOUT_FUEL] != null));
+    sc.rows.push({ team: t, match: m.key, scout: who, at: Date.now(), note: st.note,
+      values: { [SCOUT_FUEL]: st.auto + st.tele, [SCOUT_AUTO]: st.auto, [SCOUT_DEF]: st.def } });
+    for (const c of [SCOUT_FUEL, SCOUT_AUTO, SCOUT_DEF]) if (!sc.columns.includes(c)) sc.columns.push(c);
+    sc.map[SCOUT_FUEL] = 'fuel'; sc.map[SCOUT_AUTO] = 'autoFuel';
+    m.issues = m.issues || {};
+    if (st.status === 'ok') delete m.issues[t];
+    else m.issues[t] = st.status === 'noshow' ? { type: 'noshow' } : { type: 'broke', when: st.when, what: st.what, note: st.note };
+    if (!Object.keys(m.issues).length) delete m.issues;
+    m.updated = Date.now();
+    if (st.note) { ev.notes = ev.notes || {}; const line = `${matchLabel(m)}: ${st.note}`; if (!(ev.notes[t] || '').includes(line)) ev.notes[t] = [ev.notes[t], line].filter(Boolean).join('\n'); }
+    persist();
+    // Next match for this seat.
+    const ms = scoutMatches(), i = ms.indexOf(m);
+    S.scoutMatch = ms[Math.min(ms.length - 1, i + 1)].key;
+    S.sc = null;
+    recompute();
+    toast(`Saved ${tnum(t)} in ${matchLabel(m)} — ${st.auto + st.tele} fuel. Now ${matchLabel(ms[Math.min(ms.length - 1, i + 1)])}.`);
+  }
+
+  // Scouting quality: compare the sum of scouted robots on an alliance with the official
+  // fuel count. Only alliances where all three robots were scouted can be checked.
+  function scoutQuality() {
+    const sc = S.event.scouting;
+    const rows = sc && sc.rows ? sc.rows.filter(r => r.values[SCOUT_FUEL] != null) : [];
+    let robots = 0;
+    const checks = [], perScout = {};
+    for (const m of S.event.matches) {
+      if (m.comp !== 'qm' || !Model.isPlayed(m)) continue;
+      for (const [teams, v, side] of [[m.red, m.r, 'Red'], [m.blue, m.b, 'Blue']]) {
+        robots += teams.length;
+        if (v.fuel == null) continue;
+        const got = teams.map(t => rows.filter(r => r.match === m.key && r.team === t));
+        if (got.some(g => !g.length)) continue;
+        const sum = got.reduce((a, g) => a + g.reduce((x, r) => x + r.values[SCOUT_FUEL], 0) / g.length, 0);
+        const err = v.fuel ? (sum - v.fuel) / v.fuel : 0;
+        checks.push({ m, side, sum, official: v.fuel, err });
+        got.flat().forEach(r => { const p = perScout[r.scout || 'unnamed'] = perScout[r.scout || 'unnamed'] || []; p.push(err); });
+      }
+    }
+    const scouted = new Set(rows.map(r => r.match + '|' + r.team)).size;
+    return { robots, scouted, checks, perScout };
+  }
+
+  function renderScout() {
+    const ms = scoutMatches();
+    if (!ms.length) return '<div class="empty"><h2>No schedule yet</h2><p>Scout mode needs the qualification schedule (Data tab, or paste it on the Matches tab).</p></div>';
+    const seat = S.settings.scoutSeat || 'Red 1';
+    const m = currentScoutMatch();
+    const t = seatTeam(m, seat);
+    const st = scoutState();
+    if (st.loadedFor !== m.key + '|' + t) loadScoutFor(m);
+    const r = S.R.idx[t] !== undefined ? teamRow(t) : null;
+    const done = scoutRow(m.key, t);
+    const q = scoutQuality();
+    const mae = q.checks.length ? q.checks.reduce((a, c) => a + Math.abs(c.err), 0) / q.checks.length : null;
+    const worst = q.checks.slice().sort((a, b) => Math.abs(b.err) - Math.abs(a.err)).filter(c => Math.abs(c.err) > 0.2).slice(0, 6);
+    const counter = (key, label, keys) => `<div class="counter"><div class="ts-label">${label} <span class="kbd">${keys}</span></div>
+      <div class="ctrl"><button class="btn big" data-bump="${key}:-1">−1</button><span class="count" data-count="${key}">${st[key]}</span><button class="btn big primary" data-bump="${key}:1">+1</button><button class="btn big" data-bump="${key}:5">+5</button></div></div>`;
+    const opt = (list, cur) => list.map(([v, txt]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${txt}</option>`).join('');
+    return `<div class="toolbar">
+        <label>Scout <input id="scoutName" value="${esc(S.settings.scoutName || '')}" placeholder="your name" style="width:140px"></label>
+        <label>Seat <select id="scoutSeat">${SEATS.map(x => `<option ${x[2] === seat ? 'selected' : ''}>${x[2]}</option>`).join('')}</select></label>
+        <label>Match <select id="scoutMatch">${ms.map(x => `<option value="${esc(x.key)}" ${x.key === m.key ? 'selected' : ''}>${matchLabel(x)}${scoutRow(x.key, seatTeam(x, seat)) ? ' ✓' : ''}</option>`).join('')}</select></label>
+        <span class="spacer"></span><span class="help">Keys: A/Z auto ±1 · S/X teleop ±1 · Enter save</span>
+      </div>
+      <div class="grid cols-2">
+        <div class="card scout-card ${seat.startsWith('Red') ? 'red' : 'blue'}">
+          <div class="scout-team"><span class="sd">${matchLabel(m)} · ${esc(seat)}</span><div class="big-team">${esc(tnum(t))}</div><div class="sd">${esc(r ? r.name : '')}${done ? ' · <b class="pos">already scouted — saving replaces it</b>' : ''}</div></div>
+          ${counter('auto', 'Auto fuel', 'A / Z')}
+          ${counter('tele', 'Teleop fuel', 'S / X')}
+          <div class="ts-label" style="margin-top:6px">Total fuel: <b id="scoutTotal">${st.auto + st.tele}</b></div>
+          <div class="toolbar" style="margin-top:10px">
+            <label>Robot <select id="scStatus">${opt([['ok', 'OK'], ['broke', 'Broke'], ['noshow', 'No-show']], st.status)}</select></label>
+            <span id="scBroke" ${st.status === 'broke' ? '' : 'hidden'}><label>When <select id="scWhen">${opt(PROBLEM_WHEN, st.when)}</select></label> <label>What <select id="scWhat">${opt(PROBLEM_WHAT, st.what)}</select></label></span>
+            <label>Played defense <select id="scDef">${opt([['0', 'No'], ['1', 'Some'], ['2', 'Most of match']], String(st.def))}</select></label>
+          </div>
+          <input id="scNote" value="${esc(st.note)}" placeholder="Note (optional): what you noticed" style="width:100%;margin-top:6px">
+          <p class="toolbar" style="margin-top:12px"><button class="btn primary big" data-act="scout-save">Save &amp; next ▸</button></p>
+        </div>
+        <div class="card"><h3>Scouting quality</h3>
+          <div class="stats">
+            ${statCard('Robots scouted', `${q.scouted}`, `of ${q.robots} played`)}
+            ${statCard('Alliances checkable', q.checks.length, 'all 3 robots scouted')}
+            ${statCard('Typical miss', mae == null ? '—' : pct(mae, 0), 'scouted vs official fuel')}
+          </div>
+          <p class="help">Each check adds up the three scouted robots and compares with the official alliance fuel count. Within about 10–15% is good counting. A scout who is consistently high or low should adjust.</p>
+          ${Object.keys(q.perScout).length ? `<table><thead><tr><th>Scout</th><th class="n">Checks</th><th class="n">Typical over/under</th></tr></thead><tbody>${Object.entries(q.perScout).map(([n, errs]) => `<tr><td>${esc(n)}</td><td class="n">${errs.length}</td><td class="n ${Math.abs(errs.reduce((a, b) => a + b, 0) / errs.length) > 0.1 ? 'neg' : ''}">${sgn(100 * errs.reduce((a, b) => a + b, 0) / errs.length, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
+          ${worst.length ? `<h3 style="margin-top:12px">Worth a recheck</h3><table><tbody>${worst.map(c => `<tr><td><a data-match="${esc(c.m.key)}">${matchLabel(c.m)}</a> ${c.side}</td><td class="n">scouted ${f1(c.sum, 0)}</td><td class="n">official ${c.official}</td><td class="n neg">${sgn(100 * c.err, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
+        </div>
+      </div>`;
+  }
   function scoutedFuel(matchKey, t) {
     const sc = S.event.scouting;
     if (!sc || !sc.rows) return null;
@@ -1469,6 +1609,7 @@
       S.event.matches = S.event.matches.filter(x => x.key !== el.dataset.key); persist(); closeModal(); recompute();
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
+    'scout-save': () => saveScout(),
     'print-team': el => printHtml(teamReportHtml(el.dataset.key)),
     'print-match': el => { const m = S.event.matches.find(x => x.key === el.dataset.key); if (m) printHtml(matchSheetHtml(m)); },
     'print-picks': () => printHtml(pickListHtml()),
@@ -1502,6 +1643,8 @@
 
   // ---------- events ----------
   document.addEventListener('click', e => {
+    const bump = e.target.closest('[data-bump]');
+    if (bump) { const [w, d] = bump.dataset.bump.split(':'); bumpCount(w, +d); return; }
     const ps = e.target.closest('[data-poolsort]');
     if (ps) { S.settings.poolSort = ps.dataset.poolsort; Store.saveSettings(S.settings); render(); return; }
     const pk = e.target.closest('[data-pickteam],[data-unpick]');
@@ -1546,6 +1689,13 @@
     const el = e.target;
     if (el.id === 'eventSelect' && el.value) { setEvent(Store.loadEvent(el.value)); return; }
     if (el.dataset.pick) { S.event.picked = S.event.picked || {}; S.event.picked[el.dataset.pick] = el.checked; persist(); render(); return; }
+    if (el.id === 'scoutName') { S.settings.scoutName = el.value.trim(); Store.saveSettings(S.settings); S.sc = null; render(); return; }
+    if (el.id === 'scoutSeat') { S.settings.scoutSeat = el.value; Store.saveSettings(S.settings); S.sc = null; S.scoutMatch = null; render(); return; }
+    if (el.id === 'scoutMatch') { S.scoutMatch = el.value; S.sc = null; render(); return; }
+    if (el.id === 'scStatus') { scoutState().status = el.value; const b = $('#scBroke'); if (b) b.hidden = el.value !== 'broke'; return; }
+    if (el.id === 'scWhen') { scoutState().when = el.value; return; }
+    if (el.id === 'scWhat') { scoutState().what = el.value; return; }
+    if (el.id === 'scDef') { scoutState().def = +el.value; return; }
     if (el.id === 'nAlliances') { const a = allianceState(); a.n = +el.value; allianceState(); persist(); render(); return; }
     if (el.id === 'hidePicked') { S.hidePicked = el.checked; render(); return; }
     if (el.id === 'matchFilter') { S.matchFilter = el.value; render(); return; }
@@ -1599,6 +1749,7 @@
       return;
     }
     if (el.classList.contains('pt')) { updatePrediction(); return; }
+    if (el.id === 'scNote') { scoutState().note = el.value; return; }
     if (el.id === 'evSearch') { S.evQuery = el.value; refreshEventResults(); return; }
     if (el.dataset.teamNotes) {
       S.event.notes = S.event.notes || {};
@@ -1615,8 +1766,17 @@
       return;
     }
     const typing = /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
-    if (!typing && $('#modal').hidden && /^[1-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
-      S.tab = ['overview', 'teams', 'picks', 'alliances', 'luck', 'matches', 'forecast', 'predict', 'data'][+e.key - 1];
+    // In Scout mode, Enter in the note box saves too (scouts type a note, then hit Enter).
+    if (S.tab === 'scout' && $('#modal').hidden && e.key === 'Enter' && e.target.id === 'scNote') { e.preventDefault(); scoutState().note = e.target.value; saveScout(); return; }
+    // Scout mode keys: A/Z auto fuel ±1, S/X teleop fuel ±1, Enter saves.
+    if (!typing && $('#modal').hidden && S.tab === 'scout' && !e.metaKey && !e.ctrlKey) {
+      const k = e.key.toLowerCase();
+      const map = { a: ['auto', 1], z: ['auto', -1], s: ['tele', 1], x: ['tele', -1] };
+      if (map[k]) { e.preventDefault(); bumpCount(map[k][0], map[k][1]); return; }
+      if (e.key === 'Enter') { e.preventDefault(); saveScout(); return; }
+    }
+    if (!typing && $('#modal').hidden && /^[0-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+      S.tab = ['data', 'overview', 'teams', 'picks', 'alliances', 'luck', 'matches', 'scout', 'forecast', 'predict'][+e.key];
       render();
     }
   });

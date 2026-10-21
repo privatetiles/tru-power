@@ -251,3 +251,12 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .rp td.nw { white-space: nowrap; }
 
 .robots input.rf { width: 64px; text-align: right; }
+/* Scout mode */
+.scout-card.red { border-top: 4px solid var(--red); }
+.scout-card.blue { border-top: 4px solid var(--blue); }
+.scout-team { text-align: center; margin-bottom: 10px; }
+.big-team { font-size: 46px; font-weight: 750; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.counter { margin: 10px 0; }
+.counter .ctrl { display: flex; align-items: center; gap: 10px; }
+.counter .count { font-size: 34px; font-weight: 700; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
+.btn.big { padding: 10px 18px; font-size: 16px; }

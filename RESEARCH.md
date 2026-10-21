@@ -269,3 +269,22 @@ Verdict: it failed the rule and is switched off (`defenseLambda: 0`). The code i
 - `tools/reproduce.sh` runs everything end to end.
 - `REPRODUCE.md` holds the expected output, guarantees and caveats.
 - A full run from the script on 2026-10-20 reproduced every published number.
+
+---
+
+## 15. Priorities after review: reproducibility, validation, scouting data
+
+**Reproducibility check.** A fresh `git clone` of the repository, run through `tools/reproduce.sh`, produced a `results/summary.txt` identical to the working-folder run. The committed repository is therefore self-sufficient.
+
+**Raw counts vs. shares of the official total.** `tools/scouting-value.js` compares raw scouted counts with using scouts only for each robot's share of the official alliance fuel (12 simulated events per row). Typical error in fuel after ~3 matches per team:
+
+| Scouts | Scores only | Raw counts | Shares |
+|---|---|---|---|
+| Careful (±10%) | 14.2 | 8.3 | 8.2 |
+| Sloppy (±30%) | 14.2 | 9.5 | 8.9 |
+| Biased (each scout off by up to ±25%) | 14.2 | 8.9 | 8.7 |
+
+- The gain from shares is small, because alliance rows already anchor the totals, so it is **not** added to the model (simplicity).
+- The same comparison is useful as a **data-quality check** instead: the Scout tab compares scouted sums with official counts per alliance and per scout.
+
+**Scout mode.** A dedicated tab for per-robot counting (auto and teleop fuel, problems, a defense note). It saves rows mapped to the fuel and auto-fuel components, and includes a scouting-quality panel. Imports now keep one row per (team, match, scout), newest wins, so merging laptops can't double-count.

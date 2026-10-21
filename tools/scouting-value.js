@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 // How much does per-robot scouted fuel sharpen the fuel rating? Simulated events where each
-// robot's true fuel ability is known; scouts count each robot's fuel with ~10% error.
+// robot's true fuel ability is known. Scouts count each robot's fuel with error; in the
+// "biased" scenarios each scout also has a personal bias (e.g. always undercounts by 15%).
+// "Shares" uses scouts only for each robot's share of the official alliance total
+// (official fuel × robot count / scouted alliance count), which cancels a scout's bias.
 //   node tools/scouting-value.js
 'use strict';
 const LA = require('../js/linalg.js');
@@ -15,32 +18,43 @@ function corr(a, b) {
   for (let i = 0; i < n; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
   return sab / Math.sqrt(saa * sbb);
 }
-const rng = LA.makeRng(4);
-for (const frac of [0.25, 0.5, 1]) {
-  const res = { none: [], w1: [], w3: [], rmseNone: [], rmseW3: [] };
-  for (let seed = 1; seed <= 12; seed++) {
-    const ev = Demo.makeDemoEvent({ seed: 300 + seed, playedFrac: frac });
-    ev.priors = {}; ev.priorMeta = {}; // no earlier events: isolate what this event's data shows
-    const truth = ev.teams.map(t => ev.truth[t].fuel);
-    const rows = [];
-    for (const m of ev.matches) {
-      if (!Model.isPlayed(m)) continue;
-      for (const [teams, v] of [[m.red, m.r], [m.blue, m.b]]) teams.forEach((t, k) => {
-        rows.push({ team: t, match: m.key, values: { fuel: Math.max(0, Math.round(v.robots[k].trueFuel * (1 + 0.1 * rng.normal()))) } });
-      });
+const avg = a => a.reduce((x, y) => x + y) / a.length;
+
+const scenarios = [
+  { name: 'careful scouts (±10%)', noise: 0.1, bias: 0 },
+  { name: 'sloppy scouts (±30%)', noise: 0.3, bias: 0 },
+  { name: 'biased scouts (±10%, each scout off by up to ±25%)', noise: 0.1, bias: 0.25 },
+];
+for (const sc of scenarios) {
+  console.log(`\n${sc.name}`);
+  for (const frac of [0.25, 0.5, 1]) {
+    const res = { none: [], raw: [], share: [], eNone: [], eRaw: [], eShare: [] };
+    const rng = LA.makeRng(4);
+    for (let seed = 1; seed <= 12; seed++) {
+      const ev = Demo.makeDemoEvent({ seed: 300 + seed, playedFrac: frac });
+      ev.priors = {}; ev.priorMeta = {}; // isolate what this event's data shows
+      const truth = ev.teams.map(t => ev.truth[t].fuel);
+      // Six scouts, one per driver-station slot, each with a personal bias.
+      const scoutBias = Array.from({ length: 6 }, () => 1 + sc.bias * (2 * rng.uniform() - 1));
+      const raw = [], share = [];
+      for (const m of ev.matches) {
+        if (!Model.isPlayed(m)) continue;
+        [[m.red, m.r, 0], [m.blue, m.b, 3]].forEach(([teams, v, s0]) => {
+          const counts = teams.map((t, k) => Math.max(0, Math.round(v.robots[k].trueFuel * scoutBias[s0 + k] * (1 + sc.noise * rng.normal()))));
+          const tot = counts.reduce((a, b) => a + b, 0);
+          teams.forEach((t, k) => {
+            raw.push({ team: t, match: m.key, values: { fuel: counts[k] } });
+            share.push({ team: t, match: m.key, values: { fuel: tot > 0 ? v.fuel * counts[k] / tot : v.fuel / 3 } });
+          });
+        });
+      }
+      const run = rows => Array.from(Model.fit(Object.assign({}, ev, { scouting: rows && { rows, map: { fuel: 'fuel' } } }), game).comps.fuel.mean);
+      const rmse = x => Math.sqrt(x.reduce((s, v, i) => s + (v - truth[i]) ** 2, 0) / x.length);
+      const a = run(null), b = run(raw), c = run(share);
+      res.none.push(corr(a, truth)); res.raw.push(corr(b, truth)); res.share.push(corr(c, truth));
+      res.eNone.push(rmse(a)); res.eRaw.push(rmse(b)); res.eShare.push(rmse(c));
     }
-    const run = (sc, w) => {
-      const R = Model.fit(Object.assign({}, ev, { scouting: sc }), game, { scoutWeight: w });
-      return Array.from(R.comps.fuel.mean);
-    };
-    const a = run(null, 1), b = run({ rows, map: { fuel: 'fuel' } }, 1), c = run({ rows, map: { fuel: 'fuel' } }, 3);
-    res.none.push(corr(a, truth)); res.w1.push(corr(b, truth)); res.w3.push(corr(c, truth));
-    const rmse = x => Math.sqrt(x.reduce((s, v, i) => s + (v - truth[i]) ** 2, 0) / x.length);
-    res.rmseNone.push(rmse(a)); res.rmseW3.push(rmse(c));
+    console.log(`  ~${Math.round(frac * 12)} matches/team: r = ${avg(res.none).toFixed(3)} scores only · ${avg(res.raw).toFixed(3)} raw counts · ${avg(res.share).toFixed(3)} shares of official total` +
+      `   (typical error ${avg(res.eNone).toFixed(1)} · ${avg(res.eRaw).toFixed(1)} · ${avg(res.eShare).toFixed(1)} fuel)`);
   }
-  const avg = a => a.reduce((x, y) => x + y) / a.length;
-  const mp = Math.round(frac * 12);
-  console.log(`~${mp} matches per team: fuel rating vs true ability r = ${avg(res.none).toFixed(3)} from scores only, ` +
-    `${avg(res.w1).toFixed(3)} with scouting (weight 1), ${avg(res.w3).toFixed(3)} (weight 3); ` +
-    `typical error ${avg(res.rmseNone).toFixed(1)} → ${avg(res.rmseW3).toFixed(1)} fuel`);
 }

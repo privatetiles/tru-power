@@ -47,7 +47,9 @@ The numbers below are from a full run of `reproduce.sh` on 2026-10-20 with Node 
 - `test.js` also reports:
   - rating ranges cover the true strength ~89.5% of the time (target 80%)
   - trend detection catches 5 of 6 upgrades, with 6.4% false alarms
-- `scouting-value.js`: the fuel rating's correlation with true ability after ~3 matches rises from 0.728 to 0.920 with scouting.
+- `scouting-value.js`, after ~3 matches per team:
+  - **Careful scouts:** the fuel rating's correlation with true ability rises from 0.728 to 0.919 with raw counts, and 0.921 using scouts only for shares of the official total.
+  - **Sloppy and biased scouts:** the same pattern holds.
 
 ## What the backtest guarantees
 

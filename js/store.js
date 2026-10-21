@@ -72,8 +72,12 @@
     cur.starred = Object.assign({}, inc.starred || {}, cur.starred || {});
     if (inc.scouting && inc.scouting.rows) {
       cur.scouting = cur.scouting || { rows: [], map: {} };
-      const seen = new Set(cur.scouting.rows.map(r => r.team + '|' + r.match + '|' + JSON.stringify(r.values)));
-      for (const r of inc.scouting.rows) if (!seen.has(r.team + '|' + r.match + '|' + JSON.stringify(r.values))) cur.scouting.rows.push(r);
+      // One row per (team, match, scout): the newer entry wins, so re-imports never double-count.
+      const id = r => r.team + '|' + r.match + '|' + (r.scout || '') + '|' + (r.at ? '' : JSON.stringify(r.values));
+      const byId = new Map(cur.scouting.rows.map(r => [id(r), r]));
+      for (const r of inc.scouting.rows) { const o = byId.get(id(r)); if (!o || (r.at || 0) > (o.at || 0)) byId.set(id(r), r); }
+      cur.scouting.rows = [...byId.values()];
+      cur.scouting.columns = [...new Set((cur.scouting.columns || []).concat(inc.scouting.columns || []))];
       cur.scouting.map = Object.assign({}, inc.scouting.map || {}, cur.scouting.map || {});
     }
     if (!cur.priors || !Object.keys(cur.priors).length) { cur.priors = inc.priors; cur.priorMeta = inc.priorMeta; }
