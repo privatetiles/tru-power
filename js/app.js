@@ -1275,11 +1275,14 @@
         ${animControls(st)}</div>
         <div class="marker-notes"><div class="ts-label">Marker notes</div>${st.markers.length ? st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="e.g. picked up fuel, got defended"></label>`).join('') : '<p class="help">Use <b>Add marker</b> and click on the line. Each marker gets a note here.</p>'}
           ${st.pauses.length ? `<div class="ts-label" style="margin-top:10px">Pause points</div>${st.pauses.map((q, i) => `<label class="mnote"><span class="mnum pause">P${i + 1}</span><input type="number" min="0" step="0.5" data-psec="${i}" value="${q.sec}" style="width:70px"> s <button class="x" data-pdel="${i}" title="Remove">×</button></label>`).join('')}` : ''}
-          ${st.slows.length ? `<div class="ts-label" style="margin-top:10px">Slow regions</div>${st.slows.map((r, i) => `<label class="mnote"><span class="mnum slow">S${i + 1}</span><select data-sfac="${i}">${[[0.5, '½ speed'], [0.25, '¼ speed'], [0.75, '¾ speed']].map(([v, txt]) => `<option value="${v}" ${+r.factor === v ? 'selected' : ''}>${txt}</option>`).join('')}</select> <button class="x" data-sdel="${i}" title="Remove">×</button></label>`).join('')}` : ''}
+          ${st.slows.length ? `<div class="ts-label" style="margin-top:10px">Slow regions</div>${st.slows.map((r, i) => `<label class="mnote"><span class="mnum slow">S${i + 1}</span><input type="number" min="5" max="100" step="5" data-sfac="${i}" value="${Math.round(r.factor * 100)}" style="width:70px" title="Speed in this region, as a percentage of normal (5–100)"> % speed <button class="x" data-sdel="${i}" title="Remove">×</button></label>`).join('')}` : ''}
         </div>
         </div>
       </div>`;
   }
+
+  // Slow-region speed typed as a percentage of normal, kept between 5% and 100%.
+  function slowFactor(v, fallback) { const n = parseFloat(v); return isFinite(n) ? Math.max(0.05, Math.min(1, n / 100)) : fallback; }
 
   function pathSnapshot(st) { return JSON.stringify({ paths: st.paths, markers: st.markers, pauses: st.pauses, slows: st.slows }); }
 
@@ -1442,8 +1445,8 @@
         const p = strokes[r.a.p] || [];
         if (p.length < 2 || r.b.p !== r.a.p) return;
         const sub = Paths.subpath(p, Paths.arcAt(p, r.a.seg, r.a.t), Paths.arcAt(p, r.b.seg, r.b.t));
-        g += `<polyline points="${sub.map(q => q.map(v => v.toFixed(1)).join(',')).join(' ')}" class="f-slow"><title>${esc((it.title ? it.title + ' · ' : '') + 'Slow region ' + (i + 1) + ': ' + (r.factor * 100) + '% speed')}</title></polyline>`;
-        if (opts.numbered) { const mid = sub[Math.floor(sub.length / 2)]; g += `<text x="${mid[0].toFixed(1)}" y="${(mid[1] - 14).toFixed(1)}" text-anchor="middle" class="f-slow-lbl">S${i + 1}</text>`; }
+        g += `<polyline points="${sub.map(q => q.map(v => v.toFixed(1)).join(',')).join(' ')}" class="f-slow"><title>${esc((it.title ? it.title + ' · ' : '') + 'Slow region ' + (i + 1) + ': ' + Math.round(r.factor * 100) + '% speed')}</title></polyline>`;
+        if (opts.numbered) { const mid = sub[Math.floor(sub.length / 2)]; g += `<text x="${mid[0].toFixed(1)}" y="${(mid[1] - 14).toFixed(1)}" text-anchor="middle" class="f-slow-lbl" data-slbl="${i}">S${i + 1} · ${Math.round(r.factor * 100)}%</text>`; }
       });
       (it.pauses || []).forEach((q, i) => {
         const ps = Paths.pose(strokes[q.p] || [], q.seg, q.t);
@@ -2055,7 +2058,7 @@
     if (el.id === 'scoutName') { S.settings.scoutName = el.value.trim(); Store.saveSettings(S.settings); S.sc = null; render(); return; }
     if (el.id === 'scoutSeat') { S.settings.scoutSeat = el.value; Store.saveSettings(S.settings); S.sc = null; S.scoutMatch = null; render(); return; }
     if (el.id === 'scoutMatch') { S.scoutMatch = el.value; S.sc = null; S.anim = null; render(); return; }
-    if (el.dataset.sfac != null) { const r = scoutState().slows[+el.dataset.sfac]; if (r) { r.factor = +el.value; render(); } return; }
+    if (el.dataset.sfac != null) { const r = scoutState().slows[+el.dataset.sfac]; if (r) { r.factor = slowFactor(el.value, r.factor); render(); } return; }
     if (el.id === 'animRate') { if (!S.anim) S.anim = { t: 0, rate: 1, playing: false, tl: animTimeline(scoutState()) }; S.anim.rate = +el.value; return; }
     if (el.id === 'scCounted') { scoutState().counted = el.checked; return; }
     if (el.id === 'scStatus') { scoutState().status = el.value; const b = $('#scBroke'); if (b) b.hidden = el.value !== 'broke'; return; }
@@ -2116,6 +2119,17 @@
     }
     if (el.classList.contains('pt')) { updatePrediction(); return; }
     if (el.id === 'scNote') { scoutState().note = el.value; return; }
+    if (el.dataset.sfac != null) {
+      const r = scoutState().slows[+el.dataset.sfac];
+      if (r && el.value !== '') {
+        r.factor = slowFactor(el.value, r.factor);
+        const lbl = document.querySelector(`[data-slbl="${el.dataset.sfac}"]`);
+        if (lbl) lbl.textContent = `S${+el.dataset.sfac + 1} · ${Math.round(r.factor * 100)}%`;
+        if (S.anim) { S.anim.tl = animTimeline(scoutState()); S.anim.t = Math.min(S.anim.t, S.anim.tl.duration); animDraw(); }
+        const tm = $('#animTime'); if (tm && !S.anim) tm.textContent = `${fmtT(0)} / ${fmtT(animTimeline(scoutState()).duration)}`;
+      }
+      return;
+    }
     if (el.dataset.psec != null) { const q = scoutState().pauses[+el.dataset.psec]; if (q) { q.sec = Math.max(0, +el.value || 0); if (S.anim) S.anim.tl = animTimeline(scoutState()); } return; }
     if (el.id === 'animScrub') { const st = scoutState(); if (!S.anim) S.anim = { t: 0, rate: 1, playing: false, tl: animTimeline(st) }; S.anim.t = +el.value; animDraw(); return; }
     if (el.dataset.mnote != null) { const k = scoutState().markers[+el.dataset.mnote]; if (k) k.note = el.value; return; }
