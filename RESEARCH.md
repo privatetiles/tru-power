@@ -221,3 +221,31 @@ The Statbotics API was down (HTTP 500/503), so EPA was re-implemented from their
 - λd = 30 is the only setting better on both seasons. Accuracy is 79.9% (2026) and 78.3% (2025).
 - The defense signal is small but real, and larger in 2025.
 - Driving quality and robot condition cannot be read from scores. Qualitative scout ratings were added for display only.
+
+---
+
+## 13. Round 7: more rigorous testing (third blind season, event-level uncertainty)
+
+**Event-clustered uncertainty.** `tools/compare.js` resamples whole events (2,000 times) to get 95% intervals for differences between two prediction sets.
+
+**TRU POWER vs Statbotics EPA (re-implemented)**
+
+| Season | Winners called | Brier | Brier advantage (95% range) | Better Brier at |
+|---|---|---|---|---|
+| 2026 | 80.0% vs 79.9% | 0.1396 vs 0.1446 | 0.0050 (0.0033 to 0.0069) | 64% of events |
+| 2025 (blind) | 78.1% vs 78.1% | 0.1493 vs 0.1523 | 0.0030 (0.0014 to 0.0045) | 61% of events |
+| 2024 (blind: CRESCENDO; priors from 2023 OPRs, EPA from 2023+2022) | 77.0% vs 77.0% | 0.1565 vs 0.1574 | 0.0009 (−0.0007 to 0.0023), not significant | 51% of events |
+
+The accuracy-difference intervals include 0 in all three seasons.
+
+**Defense rating (λd = 30) vs off.** The rule was set before running 2024: keep it only if 2024 is not worse.
+
+| Season | Brier change | 95% range | Better at |
+|---|---|---|---|
+| 2026 | −0.0003 | −0.0006 to +0.0000 | 55% of events |
+| 2025 | −0.0012 | −0.0015 to −0.0009 | 69% of events |
+| 2024 | **+0.0005 (worse)** | +0.0002 to +0.0008 | 41% of events |
+
+Verdict: it failed the rule and is switched off (`defenseLambda: 0`). The code is kept for future testing.
+
+**Note on rigor:** λd = 30 had been chosen while looking at both 2026 and 2025, so only 2024 was a clean test for it. The other defaults (λ, last-season shrink) were tuned on 2026 only, so both 2025 and 2024 are clean tests for them.

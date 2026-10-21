@@ -23,7 +23,7 @@
     lambdaPrevYear: 3,   // prior strength for a last-season-only prior
     newFactor: 0.85,    // teams with no history start at 85% of the event's average contribution
     elimWeight: 1 / 3,  // playoff matches count 1/3 (different incentives, repeated partners)
-    defenseLambda: 30,  // defense rating shrinkage (matches' worth); improved Brier on 2026 and held-out 2025
+    defenseLambda: 0,   // defense rating: OFF. Tested at 30: helped 2025, borderline 2026, hurt blind 2024 (RESEARCH §13)
     scoutWeight: 3,     // weight of a scouted per-robot observation vs. an alliance score (tools/scouting-value.js)
     sigmaK: 20,         // pseudo-observations used to shrink the noise estimate toward the prior noise
     scaleK: 24,         // alliance-rows before prior ratings are fully rescaled to this event's scoring level

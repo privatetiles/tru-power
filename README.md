@@ -92,6 +92,18 @@ All settings were tuned on 2026, so 2026 accuracy is slightly optimistic. To che
 
 The result matches 2026: a tie with EPA on picking winners, and significantly better probabilities (paired Brier difference 0.0030 ± 0.0013, z = 4.4).
 
+#### Three seasons, with event-level uncertainty
+
+Matches at one event share teams, so they aren't independent. The ranges below come from resampling whole events (`node tools/compare.js`).
+
+| Season | TRU POWER winners / Brier | Statbotics EPA winners / Brier | TRU POWER's Brier advantage (95% range) |
+|---|---|---|---|
+| 2026 (tuned on) | 80.0% / 0.1396 | 79.9% / 0.1446 | 0.0033 to 0.0069 — better |
+| 2025 (blind) | 78.1% / 0.1493 | 78.1% / 0.1523 | 0.0014 to 0.0045 — better |
+| 2024 (blind) | 77.0% / 0.1565 | 77.0% / 0.1574 | −0.0007 to 0.0023 — tie |
+
+The accuracy differences span zero in every season, so picking winners is a tie. The probabilities are better in two seasons and never worse.
+
 #### Are the ranges honest?
 
 | Check | Result | Target |
@@ -196,9 +208,8 @@ Until then, any other year falls back to a generic model that uses total score p
 - **Scouted fuel per robot:** the match editor has a **Fuel** box for each robot. Typed counts feed that robot's fuel rating directly, so it no longer has to be estimated from the alliance total.
   - On simulated events, scouting after about 3 matches raised the fuel rating's correlation with true ability from 0.73 to 0.92, roughly what 12 matches of scores alone give.
   - It still helped with sloppy (±30%) counts. Measure it with `node tools/scouting-value.js`.
-- **Defense rating:** how much opponents score below prediction when a team plays against them.
-  - It's heavily shrunk, so it stays near zero unless the pattern is clear.
-  - It improved Brier on both 2026 (0.1396 → 0.1393) and held-out 2025 (0.1493 → 0.1481).
-  - It's part of predictions and Pick score.
+- **Defense rating:** tested and switched off.
+  - It helped on 2025, was borderline on 2026, and made blind 2024 worse, so it failed a rule set before the 2024 test.
+  - The code stays for future seasons: set `defenseLambda` to try it again.
 - **Scout ratings:** driving 1–5, defense role and robot condition, set on each team page. They're shown in Best Picks and the printed reports, and are scouts' opinions that don't feed the model.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.

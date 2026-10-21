@@ -398,7 +398,7 @@
       { key: 'starred', label: '★', sortVal: r => (r.starred ? 1 : 0), fmt: r => `<a data-star="${r.key}" title="Star">${r.starred ? '★' : '☆'}</a>` },
       { key: 'num', label: 'Team', fmt: r => teamLink(r.key) },
       { key: 'name', label: 'Name', cls: 'name', fmt: r => esc(r.name) },
-      { key: 'pickScore', label: 'Pick score', n: 1, title: 'Points per match you can count on: True Potential × reliability, plus defense, minus foul points given away', fmt: r => `<b>${f1(r.pickScore)}</b>` },
+      { key: 'pickScore', label: 'Pick score', n: 1, title: 'Points per match you can count on: True Potential × reliability, minus foul points given away', fmt: r => `<b>${f1(r.pickScore)}</b>` },
       { key: 'tp', label: 'When working', n: 1, title: 'True Potential: points added per match when the robot works', fmt: r => `${f1(r.tp)} <span class="sd">±${f1(r.tpSd, 0)}</span>` },
       { key: 'relQ', label: 'Reliability', n: 1, title: 'Chance of a clean match (no breakdown / no-show), from recorded problems blended with the event average', sortVal: r => (r.relQ == null ? 1 : 1 - r.relQ),
         fmt: r => (r.relQ == null ? '<span class="sd">—</span>' : `${pct(1 - r.relQ)}<span class="meter"><i style="width:${100 * (1 - r.relQ)}%;${r.relQ > 0.15 ? 'background:var(--bad)' : ''}"></i></span>`) },
@@ -427,7 +427,7 @@
         <div style="font-size:20px">${teamLink(r.key)} <span class="sd">${esc(r.name)}</span></div>
         <div class="stats" style="margin-top:8px">${statCard('Pick score', f1(r.pickScore))}${statCard('When working', f1(r.tp))}${statCard('Reliability', r.relQ == null ? '—' : pct(1 - r.relQ))}</div>
         ${r.problems ? `<p class="help neg">${esc(r.problemText)}</p>` : ''}</div>`).join('')}</div>` : ''}
-      <p class="help"><b>Pick score</b> = points per match you can count on: the robot's True Potential, reduced by its chance of breaking down, plus the points it takes away from opponents (defense), minus foul points it gives away.
+      <p class="help"><b>Pick score</b> = points per match you can count on: the robot's True Potential, reduced by its chance of breaking down, minus foul points it gives away.
         ${relOn ? 'Reliability comes from problems marked in the match editor, blended with the event average so one bad match doesn\'t sink a team.' : '<b>No breakdowns recorded yet</b> — mark robots as Broke / No-show in the match editor and reliability will start counting.'}
         Tick <b>Picked</b> during alliance selection and the list re-ranks what's left.${ot ? ` Your team (${esc(tnum(ot))}) is left out.` : ''}</p>
       ${table('picks', cols, rows, { rowClass: r => (r.picked ? 'picked' : '') })}`;
@@ -963,7 +963,7 @@
         <div><b>${r.relQ == null ? '—' : pct(1 - r.relQ)}</b><span>Reliability (clean matches)<br>problems ${rel.list.length}/${rel.played}</span></div>
         <div><b>${r.p8 != null ? pct(r.p8) : '…'}</b><span>Chance of top 8<br>proj. rank ${f1(r.expRank, 1)}</span></div>
       </div>
-      <p>Defense: ${r.defense != null ? sgn(r.defense, 1) + ' opponent pts/match' : '—'} · Pick score ${f1(r.pickScore)} · Scouts: ${esc(tagsText(r.tags)) || '—'}</p>
+      <p>${r.defense != null ? 'Defense: ' + sgn(r.defense, 1) + ' opponent pts/match · ' : ''}Pick score ${f1(r.pickScore)} · Scouts: ${esc(tagsText(r.tags)) || '—'}</p>
       <div class="rp-cols">
         <div><h4>Ratings</h4><table><thead><tr><th></th><th class="n">Value</th><th class="n">Likely range</th><th class="n">Rank</th></tr></thead><tbody>${comps}</tbody></table>
           ${trendText(k) ? `<h4>Trend</h4><p>${trendText(k)}</p>` : ''}
@@ -981,7 +981,7 @@
       const rows = teams.map(t => {
         const r = teamRow(t);
         const note = ((ev.notes || {})[t] || '').slice(0, 60);
-        return `<tr><td><b>${esc(tnum(t))}</b> ${esc(r.name).slice(0, 18)}</td><td class="n">${f1(r.tp)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${sgn(r.defense, 0)}</td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${trendArrow(t)}</td><td>${esc([tagsText(r.tags), note].filter(Boolean).join(' · '))}</td></tr>`;
+        return `<tr><td><b>${esc(tnum(t))}</b> ${esc(r.name).slice(0, 18)}</td><td class="n">${f1(r.tp)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td>${S.R.defense ? `<td class="n">${sgn(r.defense, 0)}</td>` : ''}<td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${trendArrow(t)}</td><td>${esc([tagsText(r.tags), note].filter(Boolean).join(' · '))}</td></tr>`;
       }).join('');
       const bonus = g.bonuses.map(b => {
         const d = Model.allianceDist(R, teams, b.comp);
@@ -991,7 +991,7 @@
       }).join('');
       const sd = Model.allianceDist(R, teams, 'total').sd;
       return `<div class="rp-side ${color}"><h4>${color === 'red' ? 'Red' : 'Blue'} alliance — win ${pct(pWin)}, score ${f1(pred.score, 0)} (likely ${range(pred.score, sd, Z_SCORE)}), exp. RP ${f1(pred.expRP, 2)}</h4>
-        <table><thead><tr><th>Team</th><th class="n">TP</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Def</th><th class="n">Reliab.</th><th class="n">Trend</th><th>Scouts / notes</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Team</th><th class="n">TP</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th>${S.R.defense ? '<th class="n">Def</th>' : ''}<th class="n">Reliab.</th><th class="n">Trend</th><th>Scouts / notes</th></tr></thead><tbody>${rows}</tbody></table>
         ${bonus ? `<ul>${bonus}</ul>` : ''}</div>`;
     };
     return `<div class="rp">${reportHead(`${matchLabel(m)} strategy sheet`, Model.isPlayed(m) ? `Played: ${m.r.score}–${m.b.score}` : 'Upcoming match')}
@@ -1002,9 +1002,9 @@
   function pickListHtml() {
     const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
     const rows = S.R.teams.filter(k => k !== ot).map(teamRow).filter(r => r.tp != null && !r.picked).sort((a, b) => b.pickScore - a.pickScore);
-    return `<div class="rp">${reportHead('Pick list', 'Ranked by pick score: True Potential × reliability + defense − fouls given away')}
-      <table class="rp-list"><thead><tr><th>#</th><th>Team</th><th class="n">Pick score</th><th class="n">TP (likely)</th><th class="n">Reliab.</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Def</th><th class="n">Rank</th><th class="n">Trend</th><th>Scouts / notes</th><th>✓</th></tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(tnum(r.key))}</b> ${esc(r.name).slice(0, 20)}</td><td class="n"><b>${f1(r.pickScore)}</b></td><td class="n">${f1(r.tp)} <span>(${range(r.tp, r.tpSd)})</span></td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${sgn(r.defense, 0)}</td><td class="n">${r.rank || '–'}</td><td class="n">${trendArrow(r.key)}</td><td>${esc([tagsText(r.tags), ((S.event.notes || {})[r.key] || '').slice(0, 40)].filter(Boolean).join(' · '))}</td><td class="box"></td></tr>`).join('')}
+    return `<div class="rp">${reportHead('Pick list', 'Ranked by pick score: True Potential × reliability − fouls given away')}
+      <table class="rp-list"><thead><tr><th>#</th><th>Team</th><th class="n">Pick score</th><th class="n">TP (likely)</th><th class="n">Reliab.</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th>${S.R.defense ? '<th class="n">Def</th>' : ''}<th class="n">Rank</th><th class="n">Trend</th><th>Scouts / notes</th><th>✓</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(tnum(r.key))}</b> ${esc(r.name).slice(0, 20)}</td><td class="n"><b>${f1(r.pickScore)}</b></td><td class="n">${f1(r.tp)} <span>(${range(r.tp, r.tpSd)})</span></td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td>${S.R.defense ? `<td class="n">${sgn(r.defense, 0)}</td>` : ''}<td class="n">${r.rank || '–'}</td><td class="n">${trendArrow(r.key)}</td><td>${esc([tagsText(r.tags), ((S.event.notes || {})[r.key] || '').slice(0, 40)].filter(Boolean).join(' · '))}</td><td class="box"></td></tr>`).join('')}
       </tbody></table></div>`;
   }
 
