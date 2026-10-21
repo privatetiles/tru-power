@@ -82,7 +82,11 @@ for (const info of events) {
     count[t] = h.length;
   }
   const sigma2 = {};
-  for (const [c, vs] of Object.entries(s2hist)) { const s = vs.slice().sort((a, b) => a - b); sigma2[c] = s[s.length >> 1]; }
+  // Typical match noise, learned only from events that finished before this one started.
+  for (const [c, vs] of Object.entries(s2hist)) {
+    const s = vs.filter(x => x.end && info.start_date && x.end < info.start_date).map(x => x.v).sort((a, b) => a - b);
+    if (s.length) sigma2[c] = s[s.length >> 1];
+  }
   const ev = { key: info.key, year, teams, matches: Model.sortMatches(matches), level: Games.levelFromEventType(info.event_type), priors, priorMeta: { count, sigma2 }, relPriors: relPrev };
 
   const acc = info.event_type === 99 ? groups.offseason : groups.official;
@@ -148,7 +152,7 @@ for (const info of events) {
   const r = TBA.rateEvent(info.key, raw, game, year);
   if (r) {
     for (const [t, ratings] of Object.entries(r.ratings)) (history[t] = history[t] || []).push({ end: info.end_date, ratings });
-    for (const [c, v] of Object.entries(r.s2)) (s2hist[c] = s2hist[c] || []).push(v);
+    for (const [c, v] of Object.entries(r.s2)) (s2hist[c] = s2hist[c] || []).push({ v, end: info.end_date });
   }
 }
 

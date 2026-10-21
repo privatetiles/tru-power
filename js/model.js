@@ -352,7 +352,7 @@
       corr[c.key] = k >= 12 && sxx > 0 && syy > 0 ? Math.max(-0.95, Math.min(0.95, sxy / Math.sqrt(sxx * syy))) : 0;
     }
 
-    const T = eventThresholds(event, game);
+    const T = eventThresholds(event, game, include);
     const defense = settings.defenseLambda && !opts.priorOnly ? fitDefense(event, comps.total, teams, idx, settings, include) : null;
     return {
       defense,
@@ -367,13 +367,13 @@
   // Official thresholds depend on the event level, but offseason events often set
   // their own (2026 data: 75, 150, 190 fuel…). Every played match tells us the
   // alliance's count and whether the bonus was earned, so infer the real cut-off.
-  function eventThresholds(event, game) {
+  function eventThresholds(event, game, include) {
     const official = Object.assign({}, game.levels[event.level || 'regional'] || {});
     const out = { values: Object.assign({}, official), detected: {} };
     for (const b of game.bonuses) {
       let lo = -Infinity, hi = Infinity, n = 0;
       for (const m of event.matches || []) {
-        if (m.comp !== QUAL || !isPlayed(m)) continue;
+        if (m.comp !== QUAL || !isPlayed(m) || (include && !include(m))) continue;
         for (const side of ['r', 'b']) {
           const v = m[side];
           if (!v.bonus || typeof v.bonus[b.key] !== 'boolean' || v[b.comp] == null) continue;
@@ -494,7 +494,7 @@
 
   function standings(event, game, include) {
     const level = event.level || 'regional';
-    const thr = eventThresholds(event, game).values;
+    const thr = eventThresholds(event, game, include).values;
     const S = {};
     for (const t of event.teams) S[t] = { team: t, rp: 0, n: 0, w: 0, l: 0, tie: 0, dq: 0, tb: game.tiebreakers.map(() => 0), tbN: 0 };
     for (const m of event.matches) {

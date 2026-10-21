@@ -249,3 +249,23 @@ The accuracy-difference intervals include 0 in all three seasons.
 Verdict: it failed the rule and is switched off (`defenseLambda: 0`). The code is kept for future testing.
 
 **Note on rigor:** λd = 30 had been chosen while looking at both 2026 and 2025, so only 2024 was a clean test for it. The other defaults (λ, last-season shrink) were tuned on 2026 only, so both 2025 and 2024 are clean tests for them.
+
+---
+
+## 14. Reproducibility and a look-ahead audit
+
+**Audit of the backtest for look-ahead.** Two leaks were found and fixed:
+
+| Leak | What it affected | Effect of the fix |
+|---|---|---|
+| Bonus-RP thresholds were inferred from all of an event's matches, not just earlier ones | Bonus-RP probabilities only | Now uses the `include` filter |
+| The prior match-noise variance was pooled from events that had started but not finished | Win probabilities, slightly | Now only events that finished before the current one starts |
+
+- After the fixes, 2026 Brier went from 0.1396 to 0.1397 and 2024 from 0.1565 to 0.1566 (0.1565 in the reproduction run). No conclusion changed.
+- The EPA baseline's week-1 season constants still use all of week 1, as Statbotics does. This favors the baseline and is documented in REPRODUCE.md.
+
+**Reproduction kit**
+- `tools/fetch-tba.js` downloads the data.
+- `tools/reproduce.sh` runs everything end to end.
+- `REPRODUCE.md` holds the expected output, guarantees and caveats.
+- A full run from the script on 2026-10-20 reproduced every published number.

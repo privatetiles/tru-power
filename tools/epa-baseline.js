@@ -60,6 +60,8 @@ for (const info of events) {
 all.sort((a, b) => a.t - b.t);
 
 // Season constants from week 1 (Statbotics data/avg.py uses week-1 alliance scores).
+// Note: like Statbotics, this uses all of week 1, so early week-1 predictions see a little
+// future information. That favours the baseline, not TRU POWER.
 const firstStart = events.map(e => e.start_date).sort()[0];
 const wk1End = new Date(Date.parse(firstStart) + 7 * 864e5).toISOString().slice(0, 10);
 const w1 = all.filter(m => m.start < wk1End);

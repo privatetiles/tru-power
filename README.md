@@ -98,9 +98,9 @@ Matches at one event share teams, so they aren't independent. The ranges below c
 
 | Season | TRU POWER winners / Brier | Statbotics EPA winners / Brier | TRU POWER's Brier advantage (95% range) |
 |---|---|---|---|
-| 2026 (tuned on) | 80.0% / 0.1396 | 79.9% / 0.1446 | 0.0033 to 0.0069 — better |
-| 2025 (blind) | 78.1% / 0.1493 | 78.1% / 0.1523 | 0.0014 to 0.0045 — better |
-| 2024 (blind) | 77.0% / 0.1565 | 77.0% / 0.1574 | −0.0007 to 0.0023 — tie |
+| 2026 (tuned on) | 80.0% / 0.1397 | 79.9% / 0.1446 | 0.0032 to 0.0068 — better |
+| 2025 (blind) | 78.1% / 0.1493 | 78.1% / 0.1522 | 0.0013 to 0.0044 — better |
+| 2024 (blind) | 77.0% / 0.1565 | 77.0% / 0.1573 | −0.0008 to 0.0022 — tie |
 
 The accuracy differences span zero in every season, so picking winners is a tie. The probabilities are better in two seasons and never worse.
 
@@ -147,6 +147,10 @@ These are now handled automatically:
 - **Offseason events often use their own bonus thresholds.** Examples include Energized at 75, 150 or 190 fuel. Once a few matches are played, the app reads the real cut-off from the results and marks it "detected" on the Overview.
 - **Climbing barely happened at official 2026 events but became common at some offseasons.** When an event scores a component very differently from teams' earlier events, those priors are given less weight so the event's own data takes over.
 
+## Reproducing the results
+
+Run `TBA_KEY=<key> ./tools/reproduce.sh` to regenerate every number above from public data. [REPRODUCE.md](REPRODUCE.md) has the expected output, the backtest's guarantees, known caveats, and a map of where each part of the method lives in the code.
+
 ## Project layout
 
 ```
@@ -163,6 +167,9 @@ tools/test.js     node tools/test.js       — model/simulation sanity tests
 tools/test-tba.js node tools/test-tba.js   — TBA import against a mock API
 tools/backtest.js node tools/backtest.js <dir-of-*_matches.csv> 2019 — backtest on TBA's public CSV archive
 tools/backtest-tba.js node tools/backtest-tba.js events.json <dir> — full-season backtest on raw TBA API data
+tools/reproduce.sh    TBA_KEY=... ./tools/reproduce.sh — download data and rerun every published number
+tools/compare.js      event-clustered comparison of two prediction sets
+tools/fetch-tba.js    download a season from TBA
 ```
 
 ## Adding the 2027 game
