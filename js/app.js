@@ -1270,14 +1270,72 @@
   // alliance walls, centerline and a grid (no detailed 2026 field elements).
   const PATH_COLORS = ['#2b62d9', '#d73a3a', '#1a7f37', '#b7791f', '#7c3aed', '#0e7490', '#be185d', '#4b5563'];
   function fieldSvg(items, opts = {}) {
+    const F = S.game && S.game.field;
+    Paths.configure(F && F.length, F && F.width);
     const W = Paths.FIELD_W, H = Paths.FIELD_H;
-    let g = `<svg class="field" viewBox="-8 -8 ${W + 16} ${H + 16}" width="100%" role="img" aria-label="Field with traced robot path">`;
-    g += `<rect x="0" y="0" width="${W}" height="${H}" rx="6" class="f-bg"/>`;
-    for (let x = 100; x < W; x += 100) g += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" class="f-grid"/>`;
-    for (let y = 100; y < H; y += 100) g += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" class="f-grid"/>`;
-    g += `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" class="f-mid"/>`;
-    g += `<rect x="0" y="0" width="10" height="${H}" class="f-red"/><rect x="${W - 10}" y="0" width="10" height="${H}" class="f-blue"/>`;
-    g += `<text x="18" y="22" class="f-lbl red">Red alliance wall</text><text x="${W - 18}" y="22" text-anchor="end" class="f-lbl blue">Blue alliance wall</text>`;
+    const pad = F ? { x: 72, y: 30 } : { x: 8, y: 8 };
+    let g = `<svg class="field" viewBox="${-pad.x} ${-pad.y} ${W + 2 * pad.x} ${H + 2 * pad.y}" width="100%" role="img" aria-label="Field with traced robot path">`;
+    g += `<defs><pattern id="bumpHatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" class="f-bump-bg"/><line x1="0" y1="0" x2="0" y2="8" class="f-bump-line"/></pattern></defs>`;
+    g += `<rect x="0" y="0" width="${W}" height="${H}" class="f-bg"/>`;
+    if (!F) {
+      for (let x = 100; x < W; x += 100) g += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" class="f-grid"/>`;
+      for (let y = 100; y < H; y += 100) g += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" class="f-grid"/>`;
+      g += `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" class="f-mid"/>`;
+      g += `<rect x="0" y="0" width="10" height="${H}" class="f-red"/><rect x="${W - 10}" y="0" width="10" height="${H}" class="f-blue"/>`;
+      g += `<text x="18" y="22" class="f-lbl red">Red alliance wall</text><text x="${W - 18}" y="22" text-anchor="end" class="f-lbl blue">Blue alliance wall</text>`;
+    } else {
+      // Real layout, to scale (inches × k). Blue elements are the red ones rotated 180°.
+      const k = W / F.length;
+      const place = (e, side) => {
+        let { x, y } = e;
+        if (side === 'blue') { x = F.length - e.x - e.w; y = F.width - e.y - e.h; }
+        return { x: x * k, y: y * k, w: e.w * k, h: e.h * k };
+      };
+      const label = (r, text, cls = '') => `<text x="${(r.x + r.w / 2).toFixed(1)}" y="${(r.y + r.h / 2).toFixed(1)}" dy="4" text-anchor="middle" class="f-el-lbl ${cls}">${text}</text>`;
+      const draw = (e, side) => {
+        const r = place(e, side), c = side;
+        const box = cls => `<rect x="${r.x.toFixed(1)}" y="${r.y.toFixed(1)}" width="${r.w.toFixed(1)}" height="${r.h.toFixed(1)}" class="${cls}"/>`;
+        switch (e.kind) {
+          case 'zone': return box(`f-zone ${c}`);
+          case 'line': return box(`f-tape ${c}`);
+          case 'center': return box('f-centerline');
+          case 'fuel': return box('f-fuel') + label(r, e.label, 'muted');
+          case 'hub': {
+            // 47 in box with its hexagonal opening.
+            const cx = r.x + r.w / 2, cy = r.y + r.h / 2, rad = r.w * 0.44;
+            const hex = Array.from({ length: 6 }, (_, i) => `${(cx + rad * Math.cos(Math.PI / 3 * i)).toFixed(1)},${(cy + rad * Math.sin(Math.PI / 3 * i)).toFixed(1)}`).join(' ');
+            return box(`f-hub ${c}`) + `<polygon points="${hex}" class="f-hub-hex ${c}"/>` + label(r, e.label, 'strong');
+          }
+          case 'bump': return box('f-bump') + label(r, e.label);
+          case 'trench': {
+            // Overhead arm robots drive under (dashed); only the post stands on the floor.
+            let out = box(`f-trench ${c}`);
+            if (e.post) {
+              const pr = place({ x: e.x, y: e.post[0], w: e.w, h: e.post[1] - e.post[0] }, side);
+              out += `<rect x="${pr.x.toFixed(1)}" y="${pr.y.toFixed(1)}" width="${pr.w.toFixed(1)}" height="${pr.h.toFixed(1)}" class="f-post"/>`;
+            }
+            const lr = Object.assign({}, r);
+            if (e.post) { const ty = side === 'blue' ? F.width - (e.y + e.h / 2) : e.y + e.h / 2; lr.y = ty * k - 12; lr.h = 24; if ((e.post[0] > e.y + e.h / 2) !== (side === 'blue')) lr.y -= 14; else lr.y += 14; }
+            return out + label(lr, e.label, 'small');
+          }
+          case 'tower': return box(`f-tower ${c}`) + label(r, e.label, 'small strong');
+          case 'depot': return box(`f-depot ${c}`) + label(r, e.label, 'small');
+          case 'outpost': return box(`f-outpost ${c}`) + `<text x="${(r.x + r.w / 2).toFixed(1)}" y="${(r.y + r.h / 2).toFixed(1)}" dy="4" text-anchor="middle" class="f-el-lbl small" transform="rotate(-90 ${(r.x + r.w / 2).toFixed(1)} ${(r.y + r.h / 2).toFixed(1)})">${e.label}</text>`;
+          case 'ds': return box(`f-ds ${c}`) + `<text x="${(r.x + r.w / 2).toFixed(1)}" y="${(r.y + r.h / 2).toFixed(1)}" dy="4" text-anchor="middle" class="f-el-lbl tiny ${c}" transform="rotate(-90 ${(r.x + r.w / 2).toFixed(1)} ${(r.y + r.h / 2).toFixed(1)})">${e.label}</text>`;
+          default: return box('f-other');
+        }
+      };
+      const order = ['zone', 'line', 'center', 'fuel', 'bump', 'trench', 'hub', 'tower', 'depot', 'outpost', 'ds'];
+      const els = [];
+      for (const e of F.red) { els.push([e, 'red']); if (F.rotate180) els.push([e, 'blue']); }
+      for (const e of F.neutral || []) els.push([e, 'neutral']);
+      els.sort((a, b) => order.indexOf(a[0].kind) - order.indexOf(b[0].kind));
+      for (const [e, side] of els) g += draw(e, side);
+      // Alliance walls, and which side faces the scoring table / audience.
+      g += `<rect x="-3" y="0" width="3" height="${H}" class="f-wall red"/><rect x="${W}" y="0" width="3" height="${H}" class="f-wall blue"/>`;
+      g += `<text x="${W / 2}" y="-12" text-anchor="middle" class="f-side">Scoring table side</text><text x="${W / 2}" y="${H + 22}" text-anchor="middle" class="f-side">Audience side</text>`;
+      g += `<rect x="0" y="0" width="${W}" height="${H}" class="f-border"/>`;
+    }
     items.forEach((it, n) => {
       const col = opts.numbered ? '#16191f' : PATH_COLORS[n % PATH_COLORS.length];
       const strokes = it.strokes || [];

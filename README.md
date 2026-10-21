@@ -217,9 +217,15 @@ Until then, any other year falls back to a generic model that uses total score p
   - Mark breakdowns, note defense, and press **Enter** to save and jump to your next match.
   - The **Scouting quality** panel adds up the three scouted robots on each alliance and compares the sum with the official fuel count. It shows your typical miss, each scout's habitual over- or under-count, and the matches worth rechecking.
   - Merge laptops with Export / Import; the newest entry per robot, match and scout wins.
-  - **Robot path:** trace the robot's route on a field outline. Click on the line to add markers; each snaps exactly onto the path, points along its direction of travel, and holds a note.
+  - **Robot path:** trace the robot's route on a to-scale 2026 field.
+    - **The field:** it shows the HUBs, BUMPs, TRENCHes (overhead arm dashed, floor post solid), TOWERs, DEPOTs, OUTPOSTs, starting lines, centerline, zones, the starting FUEL pile and the driver stations.
+      - Positions come from FIRST's 2026 Field Dimension Drawings and the manual, cross-checked with the AprilTag layout. Driver-station spans are estimates.
+      - The layout lives in `js/games.js` (`field`), so a new season's field can be added there.
+    - **Several pieces:** lift and drag again as often as you like.
+      - A piece that starts where the last one ended continues it.
+      - **Link ends** joins two pieces by hand, reversing one if needed. **Erase piece** and **Undo** fix slips.
+    - **Markers:** click on a line to add one. It snaps exactly onto the path, points along the direction of travel, and holds a note. Notes sit beside the field.
     - The team page and printed team report show all traced paths for that team, one color per match, with the marker notes listed.
-    - The field is a schematic outline (alliance walls, centerline, grid), not a detailed 2026 map.
   - **Fuel counted** checkbox: untick it if you only traced the path or lost count. The path and notes are saved, but no fuel number is, so the ratings aren't fed a false 0.
 - **Scouted fuel per robot:** the match editor has a **Fuel** box for each robot. Typed counts feed that robot's fuel rating directly, so it no longer has to be estimated from the alliance total.
   - On simulated events, scouting after about 3 matches raised the fuel rating's correlation with true ability from 0.73 to 0.92, roughly what 12 matches of scores alone give.

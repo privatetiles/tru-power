@@ -288,3 +288,30 @@ Verdict: it failed the rule and is switched off (`defenseLambda: 0`). The code i
 - The same comparison is useful as a **data-quality check** instead: the Scout tab compares scouted sums with official counts per alliance and per scout.
 
 **Scout mode.** A dedicated tab for per-robot counting (auto and teleop fuel, problems, a defense note). It saves rows mapped to the fuel and auto-fuel components, and includes a scouting-quality panel. Imports now keep one row per (team, match, scout), newest wins, so merging laptops can't double-count.
+
+---
+
+## 16. 2026 field layout (for the path panel)
+
+**Sources**
+- FIRST 2026 Field Dimension Drawings (FE-2026 Rev B, sheets 3/4/7/11)
+- Game Manual TU22 §5
+- WPILib `2026-rebuilt-welded` AprilTag layout. The hub, tower, depot and outpost positions agree with the tag poses to within about 0.07 in.
+
+**Geometry**
+- **Field:** 651.22 × 317.69 in.
+- **Frame:** origin at the red wall / scoring-table corner. Blue = red rotated 180° about (325.61, 158.84).
+- **Red elements (in):**
+
+| Element | x | y | Size |
+|---|---|---|---|
+| HUB | 158.61–205.61 | 135.34–182.34 | |
+| BUMPs | 159.91–204.31 | 62.34–135.34 and 182.34–255.34 | |
+| TRENCHes (overhead arm) | 158.61–205.61 | 0–65.65 and 252.04–317.69 | floor posts at y 50.35–62.35 / 255.34–267.34 |
+| TOWER | 0–45 | 145.59–194.84 | |
+| DEPOT | 0–27 | 61.84–103.84 | |
+| OUTPOST | in the wall | opening 267.85–317.69 | |
+| Starting line | 156.61–158.61 | full width | |
+
+- **Estimated:** the driver-station spans and the gates.
+- **Manual vs drawings:** the manual says the neutral zone is 283 in deep, but the drawings imply 334 in between the starting lines. The drawings are used.

@@ -7,7 +7,10 @@
 (function (root) {
   'use strict';
 
-  const FIELD_W = 1000, FIELD_H = 500;
+  // Drawing units: the field's long side is 1000 units; the short side follows the real
+  // field's proportions (set by configure() from the game's field; 500 when unknown).
+  let FIELD_W = 1000, FIELD_H = 500;
+  function configure(lengthIn, widthIn) { FIELD_H = lengthIn && widthIn ? Math.round(1000 * widthIn / lengthIn * 10) / 10 : 500; api.FIELD_H = FIELD_H; }
   const MIN_STEP = 4;      // drop points closer than this to the previous one (field units)
   const SNAP = 28;         // a click must be within this distance of the line to add a marker
   const JOIN = 30;         // a stroke starting/ending this close to another stroke's end/start joins it
@@ -123,7 +126,7 @@
     return [];
   }
 
-  const api = { FIELD_W, FIELD_H, SNAP, JOIN, addPoint, project, projectAll, pose, nearestEnd, link, reverse, addStroke, linkEnds, strokesOf };
+  const api = { FIELD_W, FIELD_H, configure, SNAP, JOIN, addPoint, project, projectAll, pose, nearestEnd, link, reverse, addStroke, linkEnds, strokesOf };
   root.Paths = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

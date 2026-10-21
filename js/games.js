@@ -87,6 +87,33 @@
       { key: 'tower', label: 'Tower pts' },
     ],
     robotLevels: { auto: ['None', 'Level1'], end: ['None', 'Level1', 'Level2', 'Level3'] },
+    // Top-down field layout (inches) from FIRST's 2026 Field Dimension Drawings (FE-2026 Rev B)
+    // and Game Manual §5, cross-checked with the WPILib 2026 AprilTag layout.
+    // Frame: origin at the red alliance wall / scoring-table guardrail corner, +x toward blue,
+    // +y toward the audience. Red elements are listed; blue ones are the same rotated 180°
+    // about the field center. Driver station spans are estimates.
+    field: {
+      length: 651.22, width: 317.69, rotate180: true,
+      red: [
+        { kind: 'zone', x: 0, y: 0, w: 158.61, h: 317.69, label: 'Alliance zone' },
+        { kind: 'line', x: 156.61, y: 0, w: 2, h: 317.69, label: 'Starting line' },
+        { kind: 'depot', x: 0, y: 61.84, w: 27, h: 42, label: 'DEPOT' },
+        { kind: 'tower', x: 0, y: 145.59, w: 45, h: 49.25, label: 'TOWER' },
+        { kind: 'outpost', x: -37.6, y: 267.85, w: 37.6, h: 49.84, label: 'OUTPOST' },
+        { kind: 'trench', x: 158.61, y: 0, w: 47, h: 65.65, post: [50.35, 62.35], label: 'TRENCH' },
+        { kind: 'bump', x: 159.91, y: 62.34, w: 44.4, h: 73, label: 'BUMP' },
+        { kind: 'hub', x: 158.61, y: 135.34, w: 47, h: 47, label: 'HUB' },
+        { kind: 'bump', x: 159.91, y: 182.34, w: 44.4, h: 73, label: 'BUMP' },
+        { kind: 'trench', x: 158.61, y: 252.04, w: 47, h: 65.65, post: [255.34, 267.34], label: 'TRENCH' },
+        { kind: 'ds', x: -12.25, y: 0, w: 12.25, h: 72.8, label: 'DS1' },
+        { kind: 'ds', x: -12.25, y: 72.8, w: 12.25, h: 72.79, label: 'DS2' },
+        { kind: 'ds', x: -12.25, y: 194.85, w: 12.25, h: 73, label: 'DS3' },
+      ],
+      neutral: [
+        { kind: 'center', x: 324.61, y: 0, w: 2, h: 317.69, label: 'Center line' },
+        { kind: 'fuel', x: 289.66, y: 67.89, w: 71.9, h: 181.9, label: 'FUEL (start)' },
+      ],
+    },
     robotTowerPoints(autoLevel, endLevel) { return (TOWER_AUTO[autoLevel] || 0) + (TOWER_TELEOP[endLevel] || 0); },
   };
 
