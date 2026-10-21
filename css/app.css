@@ -162,7 +162,7 @@ td.name { max-width: 180px; overflow: hidden; text-overflow: ellipsis; color: va
 .field { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin: 5px 0; }
 .field label { color: var(--muted); font-size: 12.5px; }
 .field input { width: 90px; text-align: right; }
-.robots { display: grid; grid-template-columns: auto 1fr 1fr auto; gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12.5px; }
+.robots { display: grid; grid-template-columns: auto 1fr 1fr 64px auto; gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12.5px; }
 .robots input.tm { width: 70px; }
 .checks { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; font-size: 12.5px; }
 .log { background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: 12px/1.5 ui-monospace, Menlo, monospace; max-height: 220px; overflow-y: auto; white-space: pre-wrap; }
@@ -249,3 +249,5 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .best-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .best-row .btn { margin-left: auto; }
 .rp td.nw { white-space: nowrap; }
+
+.robots input.rf { width: 64px; text-align: right; }

@@ -191,3 +191,33 @@ The Statbotics API was down (HTTP 500/503), so EPA was re-implemented from their
 - **Threshold:** at |t| > 1.5, 15.8% of unchanged teams were falsely flagged. At |t| > 2.2 that drops to 6.4%, and 5 of 6 injected +60-point upgrades are still caught.
 - **Usage:** display only, since recency weighting did not improve 2026 predictions (§9).
 - **Reliability:** reliability now discounts problems by 0.85 per match of age.
+
+---
+
+## 12. Round 6: addressing the review's limitations
+
+**1. Benchmark is a re-implementation.** The Statbotics API still returned HTTP 500 on 2026-10-20. Rerun `tools/epa-baseline.js` against live predictions when it returns. The held-out 2025 result already shows the edge is not a 2026 artifact.
+
+**2. Per-robot fuel is estimated.** Added per-robot scouted fuel entry to the match editor; it is stored as scouting rows mapped to the fuel component. `tools/scouting-value.js` measures the effect on simulated events where true ability is known (12 seeds each), as correlation of the fuel rating with true ability:
+
+| Matches per team | Scores only | Scouting (±10% counts) | Scouting (±30% counts) |
+|---|---|---|---|
+| ~3 | 0.728 | 0.920 | 0.895 |
+| ~6 | 0.863 | 0.963 | 0.949 |
+| ~12 | 0.942 | 0.980 | 0.971 |
+
+- Typical error after ~3 matches: 14.2 → 8.3 fuel.
+- Scout weight 3 beat 1 even with sloppy counts, so the default is now 3.
+
+**3. Can't see defense, driving, condition.** A two-stage defense rating was added: alliance residuals regressed on opposing teams with ridge λd.
+
+| λd | 2026 Brier | 2025 Brier (held out) |
+|---|---|---|
+| none | 0.1396 | 0.1493 |
+| 10 | 0.1402 | 0.1478 |
+| **30 (default)** | **0.1393** | **0.1481** |
+| 100 | 0.1394 | 0.1488 |
+
+- λd = 30 is the only setting better on both seasons. Accuracy is 79.9% (2026) and 78.3% (2025).
+- The defense signal is small but real, and larger in 2025.
+- Driving quality and robot condition cannot be read from scores. Qualitative scout ratings were added for display only.

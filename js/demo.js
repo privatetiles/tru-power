@@ -86,7 +86,8 @@
         const rs = teams3.map(playRobot);
         const fuel = rs.reduce((a, r) => a + r.fuel, 0);
         const autoFuel = rs.reduce((a, r) => a + r.af, 0);
-        const robots = rs.map(r => ({ tower: game.robotTowerPoints(r.autoLevel, r.endLevel), autoLevel: r.autoLevel, endLevel: r.endLevel }));
+        // trueFuel: what each robot really scored (hidden from the model; used to simulate scouting).
+        const robots = rs.map(r => ({ tower: game.robotTowerPoints(r.autoLevel, r.endLevel), autoLevel: r.autoLevel, endLevel: r.endLevel, trueFuel: r.fuel }));
         const tower = robots.reduce((a, r) => a + r.tower, 0);
         const autoTower = rs.reduce((a, r) => a + (r.autoLevel === 'Level1' ? 15 : 0), 0);
         return { fuel, autoFuel, tower, robots, auto: autoFuel + autoTower, total: fuel + tower, foulsCommitted: rs.reduce((a, r) => a + r.fouls, 0) };

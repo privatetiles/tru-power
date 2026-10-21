@@ -193,4 +193,12 @@ Until then, any other year falls back to a generic model that uses total score p
   - Alliance Selection shows each alliance's chance to win the event and reach the finals, by simulating the double-elimination bracket. Empty slots are filled with likely picks.
   - **Best next pick** ranks candidates by how much they raise the picking alliance's chance to win the event.
 - **Printable reports:** a team report (team page → Print report), a match strategy sheet (Matches → Sheet), and a pick list with checkboxes (Best Picks → Print pick list). Use the print dialog's *Save as PDF* to share them.
+- **Scouted fuel per robot:** the match editor has a **Fuel** box for each robot. Typed counts feed that robot's fuel rating directly, so it no longer has to be estimated from the alliance total.
+  - On simulated events, scouting after about 3 matches raised the fuel rating's correlation with true ability from 0.73 to 0.92, roughly what 12 matches of scores alone give.
+  - It still helped with sloppy (±30%) counts. Measure it with `node tools/scouting-value.js`.
+- **Defense rating:** how much opponents score below prediction when a team plays against them.
+  - It's heavily shrunk, so it stays near zero unless the pattern is clear.
+  - It improved Brier on both 2026 (0.1396 → 0.1393) and held-out 2025 (0.1493 → 0.1481).
+  - It's part of predictions and Pick score.
+- **Scout ratings:** driving 1–5, defense role and robot condition, set on each team page. They're shown in Best Picks and the printed reports, and are scouts' opinions that don't feed the model.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.

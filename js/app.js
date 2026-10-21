@@ -150,7 +150,11 @@
       starred: !!(S.event.starred || {})[k], picked: !!(S.event.picked || {})[k] || allianceOf(k) != null,
       relOn: R.rel.any, relQ: R.rel.any ? R.rel.q[i] : null, relFactor: R.rel.any ? R.rel.factor[i] : 1,
       // Expected points it actually delivers: working strength × reliability, minus fouls given away.
-      pickScore: get('total') != null ? get('total') * (R.rel.any ? R.rel.factor[i] : 1) - Math.max(0, get('fouls') || 0) : null,
+      defense: R.defense ? R.defense[i] : null,
+      tags: (S.event.scoutTags || {})[k] || {},
+      // Expected points it actually delivers: working strength × reliability, plus points it
+      // takes away from opponents (defense), minus fouls given away.
+      pickScore: get('total') != null ? get('total') * (R.rel.any ? R.rel.factor[i] : 1) + (R.defense ? R.defense[i] : 0) - Math.max(0, get('fouls') || 0) : null,
       ...(() => { const rel = reliability(k); return { played: rel.played, problems: rel.list.length, problemText: rel.list.map(x => `${matchLabel(x.m)} ${issueText(x.iss)}${x.iss.note ? ' (' + x.iss.note + ')' : ''}`).join('; ') }; })(),
     };
   }
@@ -350,6 +354,7 @@
     if (has('autoFuel')) cols.push({ key: 'autoFuel', label: 'A.Fuel', n: 1, fmt: r => f1(r.autoFuel) });
     if (has('tower')) cols.push({ key: 'tower', label: 'Tower', n: 1, fmt: r => f1(r.tower) });
     if (has('fouls')) cols.push({ key: 'fouls', label: 'Fouls', n: 1, title: 'Foul points given to opponents per match (lower is better)', fmt: r => f1(r.fouls) });
+    if (S.R.defense) cols.push({ key: 'defense', label: 'Defense', n: 1, title: 'Points per match opponents score below prediction when this team plays against them (higher = better defender). Usually small.', fmt: r => `<span class="${cls(r.defense)}">${sgn(r.defense, 1)}</span>` });
     if (has('fouls')) cols.push({ key: 'net', label: 'Net', n: 1, title: 'True Potential minus foul points given away', fmt: r => f1(r.net) });
     cols.push(
       { key: 'opr', label: 'OPR', n: 1, title: 'Plain OPR (incl. fouls) for reference — noisier than True Potential', fmt: r => `<span class="sd">${f1(r.opr)}</span>` },
@@ -393,11 +398,12 @@
       { key: 'starred', label: '★', sortVal: r => (r.starred ? 1 : 0), fmt: r => `<a data-star="${r.key}" title="Star">${r.starred ? '★' : '☆'}</a>` },
       { key: 'num', label: 'Team', fmt: r => teamLink(r.key) },
       { key: 'name', label: 'Name', cls: 'name', fmt: r => esc(r.name) },
-      { key: 'pickScore', label: 'Pick score', n: 1, title: 'Points per match you can count on: True Potential × reliability, minus foul points given away', fmt: r => `<b>${f1(r.pickScore)}</b>` },
+      { key: 'pickScore', label: 'Pick score', n: 1, title: 'Points per match you can count on: True Potential × reliability, plus defense, minus foul points given away', fmt: r => `<b>${f1(r.pickScore)}</b>` },
       { key: 'tp', label: 'When working', n: 1, title: 'True Potential: points added per match when the robot works', fmt: r => `${f1(r.tp)} <span class="sd">±${f1(r.tpSd, 0)}</span>` },
       { key: 'relQ', label: 'Reliability', n: 1, title: 'Chance of a clean match (no breakdown / no-show), from recorded problems blended with the event average', sortVal: r => (r.relQ == null ? 1 : 1 - r.relQ),
         fmt: r => (r.relQ == null ? '<span class="sd">—</span>' : `${pct(1 - r.relQ)}<span class="meter"><i style="width:${100 * (1 - r.relQ)}%;${r.relQ > 0.15 ? 'background:var(--bad)' : ''}"></i></span>`) },
       { key: 'problems', label: 'Problems', n: 1, sortVal: r => r.problems, fmt: r => (r.problems ? `<span class="neg" title="${esc(r.problemText)}">${r.problems}/${r.played}</span>` : `<span class="sd">0/${r.played}</span>`) },
+      { key: 'scouts', label: 'Scouts', nosort: true, title: 'Scout ratings from team pages: driving 1–5, defense role, robot condition', fmt: r => tagsHtml(r.tags) },
     ];
     if (has('auto')) cols.push({ key: 'auto', label: 'Auto', n: 1, fmt: r => f1(r.auto) });
     if (has('fuel')) cols.push({ key: 'fuel', label: 'Fuel', n: 1, fmt: r => f1(r.fuel) });
@@ -421,7 +427,7 @@
         <div style="font-size:20px">${teamLink(r.key)} <span class="sd">${esc(r.name)}</span></div>
         <div class="stats" style="margin-top:8px">${statCard('Pick score', f1(r.pickScore))}${statCard('When working', f1(r.tp))}${statCard('Reliability', r.relQ == null ? '—' : pct(1 - r.relQ))}</div>
         ${r.problems ? `<p class="help neg">${esc(r.problemText)}</p>` : ''}</div>`).join('')}</div>` : ''}
-      <p class="help"><b>Pick score</b> = points per match you can count on: the robot's True Potential, reduced by its chance of breaking down, minus foul points it gives away.
+      <p class="help"><b>Pick score</b> = points per match you can count on: the robot's True Potential, reduced by its chance of breaking down, plus the points it takes away from opponents (defense), minus foul points it gives away.
         ${relOn ? 'Reliability comes from problems marked in the match editor, blended with the event average so one bad match doesn\'t sink a team.' : '<b>No breakdowns recorded yet</b> — mark robots as Broke / No-show in the match editor and reliability will start counting.'}
         Tick <b>Picked</b> during alliance selection and the list re-ranks what's left.${ot ? ` Your team (${esc(tnum(ot))}) is left out.` : ''}</p>
       ${table('picks', cols, rows, { rowClass: r => (r.picked ? 'picked' : '') })}`;
@@ -957,6 +963,7 @@
         <div><b>${r.relQ == null ? '—' : pct(1 - r.relQ)}</b><span>Reliability (clean matches)<br>problems ${rel.list.length}/${rel.played}</span></div>
         <div><b>${r.p8 != null ? pct(r.p8) : '…'}</b><span>Chance of top 8<br>proj. rank ${f1(r.expRank, 1)}</span></div>
       </div>
+      <p>Defense: ${r.defense != null ? sgn(r.defense, 1) + ' opponent pts/match' : '—'} · Pick score ${f1(r.pickScore)} · Scouts: ${esc(tagsText(r.tags)) || '—'}</p>
       <div class="rp-cols">
         <div><h4>Ratings</h4><table><thead><tr><th></th><th class="n">Value</th><th class="n">Likely range</th><th class="n">Rank</th></tr></thead><tbody>${comps}</tbody></table>
           ${trendText(k) ? `<h4>Trend</h4><p>${trendText(k)}</p>` : ''}
@@ -974,7 +981,7 @@
       const rows = teams.map(t => {
         const r = teamRow(t);
         const note = ((ev.notes || {})[t] || '').slice(0, 60);
-        return `<tr><td><b>${esc(tnum(t))}</b> ${esc(r.name).slice(0, 18)}</td><td class="n">${f1(r.tp)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${trendArrow(t)}</td><td>${esc(note)}</td></tr>`;
+        return `<tr><td><b>${esc(tnum(t))}</b> ${esc(r.name).slice(0, 18)}</td><td class="n">${f1(r.tp)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${sgn(r.defense, 0)}</td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${trendArrow(t)}</td><td>${esc([tagsText(r.tags), note].filter(Boolean).join(' · '))}</td></tr>`;
       }).join('');
       const bonus = g.bonuses.map(b => {
         const d = Model.allianceDist(R, teams, b.comp);
@@ -984,7 +991,7 @@
       }).join('');
       const sd = Model.allianceDist(R, teams, 'total').sd;
       return `<div class="rp-side ${color}"><h4>${color === 'red' ? 'Red' : 'Blue'} alliance — win ${pct(pWin)}, score ${f1(pred.score, 0)} (likely ${range(pred.score, sd, Z_SCORE)}), exp. RP ${f1(pred.expRP, 2)}</h4>
-        <table><thead><tr><th>Team</th><th class="n">TP</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Reliab.</th><th class="n">Trend</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>
+        <table><thead><tr><th>Team</th><th class="n">TP</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Def</th><th class="n">Reliab.</th><th class="n">Trend</th><th>Scouts / notes</th></tr></thead><tbody>${rows}</tbody></table>
         ${bonus ? `<ul>${bonus}</ul>` : ''}</div>`;
     };
     return `<div class="rp">${reportHead(`${matchLabel(m)} strategy sheet`, Model.isPlayed(m) ? `Played: ${m.r.score}–${m.b.score}` : 'Upcoming match')}
@@ -995,9 +1002,9 @@
   function pickListHtml() {
     const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
     const rows = S.R.teams.filter(k => k !== ot).map(teamRow).filter(r => r.tp != null && !r.picked).sort((a, b) => b.pickScore - a.pickScore);
-    return `<div class="rp">${reportHead('Pick list', 'Ranked by pick score: True Potential × reliability − fouls given away')}
-      <table class="rp-list"><thead><tr><th>#</th><th>Team</th><th class="n">Pick score</th><th class="n">TP (likely)</th><th class="n">Reliab.</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Rank</th><th class="n">Trend</th><th>Notes</th><th>✓</th></tr></thead><tbody>
-      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(tnum(r.key))}</b> ${esc(r.name).slice(0, 20)}</td><td class="n"><b>${f1(r.pickScore)}</b></td><td class="n">${f1(r.tp)} <span>(${range(r.tp, r.tpSd)})</span></td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${r.rank || '–'}</td><td class="n">${trendArrow(r.key)}</td><td>${esc(((S.event.notes || {})[r.key] || '').slice(0, 40))}</td><td class="box"></td></tr>`).join('')}
+    return `<div class="rp">${reportHead('Pick list', 'Ranked by pick score: True Potential × reliability + defense − fouls given away')}
+      <table class="rp-list"><thead><tr><th>#</th><th>Team</th><th class="n">Pick score</th><th class="n">TP (likely)</th><th class="n">Reliab.</th><th class="n">Auto</th><th class="n">Fuel</th><th class="n">Tower</th><th class="n">Def</th><th class="n">Rank</th><th class="n">Trend</th><th>Scouts / notes</th><th>✓</th></tr></thead><tbody>
+      ${rows.map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(tnum(r.key))}</b> ${esc(r.name).slice(0, 20)}</td><td class="n"><b>${f1(r.pickScore)}</b></td><td class="n">${f1(r.tp)} <span>(${range(r.tp, r.tpSd)})</span></td><td class="n">${r.relQ == null ? '—' : pct(1 - r.relQ)}</td><td class="n">${f1(r.auto)}</td><td class="n">${f1(r.fuel)}</td><td class="n">${f1(r.tower)}</td><td class="n">${sgn(r.defense, 0)}</td><td class="n">${r.rank || '–'}</td><td class="n">${trendArrow(r.key)}</td><td>${esc([tagsText(r.tags), ((S.event.notes || {})[r.key] || '').slice(0, 40)].filter(Boolean).join(' · '))}</td><td class="box"></td></tr>`).join('')}
       </tbody></table></div>`;
   }
 
@@ -1056,6 +1063,9 @@
       <div class="split">
         <div><h3>Ratings</h3><table><thead><tr><th></th><th class="n">Now</th><th class="n">Rank</th><th class="n" title="Average of earlier events">Prior</th><th class="n" title="Matches of data at this event">Data</th></tr></thead><tbody>${compRows}</tbody></table>
           <p class="help">${ev.priorMeta && ev.priorMeta.count && ev.priorMeta.count[k] ? `Prior from ${ev.priorMeta.count[k]} earlier event(s).` : 'No earlier-event data — starts near event average.'} Plain OPR: ${f1(r.opr)}.</p>
+          ${r.defense != null ? `<p class="help">Defense: opponents score about <b>${sgn(r.defense, 1)}</b> pts below prediction when this team plays against them (rank ${S.R.teams.map(t => S.R.defense[S.R.idx[t]]).sort((x, y) => y - x).indexOf(r.defense) + 1}/${S.R.teams.length}). Small values are normal; scores show defense only weakly.</p>` : ''}
+          <h3 style="margin-top:12px">Scout ratings</h3>
+          <div class="toolbar">${scoutTagControls(k, r.tags)}</div>
           ${trendText(k) ? `<p class="help">${trendText(k)}</p>` : ''}
           ${(() => { const rel = reliability(k); if (!rel.played) return ''; if (!rel.list.length) return `<p class="help">Reliability: no problems recorded in ${rel.played} matches.</p>`;
             return `<p class="help"><b class="neg">Reliability: problems in ${rel.list.length} of ${rel.played} matches</b> — ${rel.list.map(x => `${matchLabel(x.m)} ${esc(issueText(x.iss))}${x.iss.note ? ' (' + esc(x.iss.note) + ')' : ''}`).join('; ')}. Those matches are left out of its rating.</p>`; })()}
@@ -1065,6 +1075,46 @@
         </div>
         <div><h3>Matches</h3><table><thead><tr><th>Match</th><th></th><th>Partners</th><th>Opponents</th><th class="n">Win %</th><th>Result</th></tr></thead><tbody>${matchRows}</tbody></table></div>
       </div>`);
+  }
+
+  // ---------- Scout ratings (what scores can't show) ----------
+  const TAGS = {
+    drive: { label: 'Driving', opts: [['', '–'], ['1', '1'], ['2', '2'], ['3', '3'], ['4', '4'], ['5', '5']] },
+    defense: { label: 'Defense role', opts: [['', '–'], ['none', 'None'], ['some', 'Some'], ['strong', 'Strong']] },
+    condition: { label: 'Condition', opts: [['', '–'], ['good', 'Good'], ['fair', 'Fair'], ['poor', 'Poor']] },
+  };
+  function scoutTagControls(k, tags) {
+    return Object.entries(TAGS).map(([key, d]) => `<label>${d.label} <select data-tag="${key}" data-team-tag="${esc(k)}">${d.opts.map(([v, txt]) => `<option value="${v}" ${(tags[key] || '') === v ? 'selected' : ''}>${txt}</option>`).join('')}</select></label>`).join(' ');
+  }
+  function tagsHtml(tags) {
+    const out = [];
+    if (tags.drive) out.push(`<span class="pill ${+tags.drive >= 4 ? 'good' : +tags.drive <= 2 ? 'bad' : 'muted'}" title="Driving (scouts)">drive ${esc(tags.drive)}</span>`);
+    if (tags.defense && tags.defense !== 'none') out.push(`<span class="pill ${tags.defense === 'strong' ? 'good' : 'muted'}" title="Defense role (scouts)">def ${esc(tags.defense)}</span>`);
+    if (tags.condition) out.push(`<span class="pill ${tags.condition === 'good' ? 'good' : tags.condition === 'poor' ? 'bad' : 'muted'}" title="Robot condition (scouts)">${esc(tags.condition)}</span>`);
+    return out.join(' ');
+  }
+  const tagsText = tags => [tags.drive ? 'drive ' + tags.drive : '', tags.defense && tags.defense !== 'none' ? 'def ' + tags.defense : '', tags.condition || ''].filter(Boolean).join(', ');
+
+  // ---------- Scouted per-robot fuel (match editor) ----------
+  const SCOUT_FUEL = 'Fuel (scouted)';
+  function scoutedFuel(matchKey, t) {
+    const sc = S.event.scouting;
+    if (!sc || !sc.rows) return null;
+    const r = sc.rows.find(x => x.match === matchKey && x.team === t && x.values[SCOUT_FUEL] != null);
+    return r ? r.values[SCOUT_FUEL] : null;
+  }
+  function saveScoutedFuel(key, oldKey, entries) {
+    const ev = S.event;
+    const sc = ev.scouting = ev.scouting || { columns: [], rows: [], map: {}, show: {} };
+    sc.rows = sc.rows.filter(x => !((x.match === key || x.match === oldKey) && x.values[SCOUT_FUEL] != null));
+    let any = false;
+    for (const { t, v } of entries) {
+      if (!t || v === '' || !isFinite(+v)) continue;
+      sc.rows.push({ team: t, match: key, values: { [SCOUT_FUEL]: +v } });
+      any = true;
+    }
+    if (any && !sc.columns.includes(SCOUT_FUEL)) sc.columns.push(SCOUT_FUEL);
+    if (sc.columns.includes(SCOUT_FUEL)) sc.map[SCOUT_FUEL] = 'fuel';
   }
 
   // ---------- Match editor ----------
@@ -1082,7 +1132,7 @@
       const rp = `<div class="field"><label>RP earned (optional)</label><input type="number" min="0" data-f="${side}.rp" value="${v.rp != null ? v.rp : ''}"></div>`;
       const bon = g.bonuses.length ? `<div class="checks">${g.bonuses.map(b => `<label><input type="checkbox" data-b="${side}.${b.key}" ${v.bonus && v.bonus[b.key] ? 'checked' : ''}> ${b.label}</label>`).join('')}</div>` : '';
       const lv = g.robotLevels;
-      const robots = `<div class="robots"><span class="sd">Team</span><span class="sd">${lv ? 'Auto tower' : ''}</span><span class="sd">${lv ? 'End tower' : ''}</span><span class="sd">Robot</span>
+      const robots = `<div class="robots"><span class="sd">Team</span><span class="sd">${lv ? 'Auto tower' : ''}</span><span class="sd">${lv ? 'End tower' : ''}</span><span class="sd" title="Fuel this robot scored, counted by a scout (optional)">Fuel</span><span class="sd">Robot</span>
         ${[0, 1, 2].map(k => {
           const rb = v.robots && v.robots[k];
           const t = teams[k] || '';
@@ -1092,6 +1142,7 @@
           return `<input class="tm" data-t="${side}.${k}" value="${esc(tnum(t))}">
             ${lv ? `<select data-ra="${side}.${k}">${lv.auto.map(o => `<option ${rb && rb.autoLevel === o ? 'selected' : ''}>${o}</option>`).join('')}</select>
             <select data-re="${side}.${k}">${lv.end.map(o => `<option ${rb && rb.endLevel === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : '<span></span><span></span>'}
+            <input class="rf" type="number" min="0" data-rf="${side}.${k}" value="${t != null && scoutedFuel(m.key, t) != null ? scoutedFuel(m.key, t) : ''}" placeholder="–" title="Fuel this robot scored (scouted)">
             <select data-st="${side}.${k}" class="status-${st}">${opt([['ok', 'OK'], ['broke', 'Broke'], ['noshow', 'No-show']], st)}</select>
             <div class="problem" data-pb="${side}.${k}" ${st === 'broke' ? '' : 'hidden'}>
               <label>When <select data-pw="${side}.${k}">${opt(PROBLEM_WHEN, (iss && iss.when) || 'teleop')}</select></label>
@@ -1130,6 +1181,8 @@
     if (!m) m = { redSurr: [], blueSurr: [], redDQ: [], blueDQ: [] };
     if (oldKey && oldKey !== key) ev.matches = ev.matches.filter(x => x.key !== oldKey);
     Object.assign(m, { key, comp, set: comp === 'sf' ? n : 1, num: comp === 'sf' ? 1 : n, red, blue, source: 'manual', updated: Date.now() });
+    // Per-robot fuel typed in by scouts: stored as scouting rows that feed the fuel rating.
+    saveScoutedFuel(key, oldKey, [0, 1, 2].flatMap(k => [['r', red[k]], ['b', blue[k]]].map(([side, t]) => ({ t, v: val(`[data-rf="${side}.${k}"]`) }))));
     m.issues = {};
     delete m.out;
     for (const side of ['r', 'b']) [0, 1, 2].forEach(k => {
@@ -1500,6 +1553,12 @@
     if (el.id === 'ourTeam') { S.settings.ourTeam = el.value.trim() ? tkey(el.value) : ''; Store.saveSettings(S.settings); render(); loadCatalogueAndShow(true); return; }
     if (el.id === 'tbaKey') { S.settings.tbaKey = el.value.trim(); Store.saveSettings(S.settings); loadCatalogueAndShow(true); return; }
     if (el.id === 'evYear') { S.evYear = +el.value; refreshEventResults(); loadCatalogueAndShow(false); return; }
+    if (el.dataset.teamTag) {
+      const all = S.event.scoutTags = S.event.scoutTags || {};
+      const tg = all[el.dataset.teamTag] = all[el.dataset.teamTag] || {};
+      if (el.value) tg[el.dataset.tag] = el.value; else delete tg[el.dataset.tag];
+      persist(); return;
+    }
     if (el.id === 'useReliability') { S.settings.model = S.settings.model || {}; S.settings.model.useReliability = el.checked; Store.saveSettings(S.settings); recompute(); return; }
     if (el.id === 'autoSync') { S.settings.autoSync = el.checked; Store.saveSettings(S.settings); renderStatus(); autoSyncTick(true); return; }
     if (el.id === 'level' && S.event) { S.event.level = el.value; persist(); recompute(); return; }

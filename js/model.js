@@ -23,7 +23,8 @@
     lambdaPrevYear: 3,   // prior strength for a last-season-only prior
     newFactor: 0.85,    // teams with no history start at 85% of the event's average contribution
     elimWeight: 1 / 3,  // playoff matches count 1/3 (different incentives, repeated partners)
-    scoutWeight: 1,     // weight of a scouted per-robot observation relative to an alliance score
+    defenseLambda: 30,  // defense rating shrinkage (matches' worth); improved Brier on 2026 and held-out 2025
+    scoutWeight: 3,     // weight of a scouted per-robot observation vs. an alliance score (tools/scouting-value.js)
     sigmaK: 20,         // pseudo-observations used to shrink the noise estimate toward the prior noise
     scaleK: 24,         // alliance-rows before prior ratings are fully rescaled to this event's scoring level
     scaleMin: 0.5,      // limits on that rescaling
@@ -217,6 +218,30 @@
     };
   }
 
+  // ---------- Defense (experimental) ----------
+  // After the scoring ratings are fit, ask whether an alliance scores less than predicted
+  // when a given team is among its opponents. Heavy ridge (defenseLambda matches' worth)
+  // keeps it at zero unless the pattern is strong. Positive = suppresses opponents.
+  function fitDefense(event, total, teams, idx, settings, include) {
+    if (!total.available) return null;
+    const n = teams.length, lam = settings.defenseLambda;
+    const G = new Float64Array(n * n), b = new Float64Array(n);
+    for (const m of event.matches) {
+      if (!isPlayed(m) || m.comp !== QUAL || (include && !include(m))) continue;
+      for (const [mine, opp, v] of [[m.red, m.blue, m.r], [m.blue, m.red, m.b]]) {
+        if (v.total == null) continue;
+        let pred = 0;
+        for (const t of mine) if (idx[t] !== undefined) pred += total.mean[idx[t]];
+        const e = v.total - pred;
+        const ids = opp.map(t => idx[t]).filter(i => i !== undefined);
+        for (const i of ids) { b[i] -= e; for (const j of ids) G[i * n + j] += 1; }
+      }
+    }
+    for (let i = 0; i < n; i++) G[i * n + i] += lam;
+    if (!LA.cholesky(G, n)) return null;
+    return LA.cholSolve(G, n, b);
+  }
+
   // ---------- Reliability ----------
   // Share of a match's contribution lost when a robot has a problem, by when it happened.
   const LOSS = { noshow: 1, auto: 0.9, teleop: 0.5, endgame: 0.2 };
@@ -328,7 +353,9 @@
     }
 
     const T = eventThresholds(event, game);
+    const defense = settings.defenseLambda && !opts.priorOnly ? fitDefense(event, comps.total, teams, idx, settings, include) : null;
     return {
+      defense,
       teams, idx, comps, corr, game, settings,
       rel: reliabilityOf(event, teams, settings, include),
       level: event.level || 'regional', thr: T.values, thrDetected: T.detected,
@@ -420,6 +447,11 @@
   function predictMatch(R, red, blue) {
     const pr = predictAlliance(R, red), pb = predictAlliance(R, blue);
     const sd = Math.sqrt(pr.total.sd * pr.total.sd + pb.total.sd * pb.total.sd);
+    // Defense (optional): each team's estimated suppression of the opponents' score.
+    if (R.defense) {
+      for (const t of blue) if (R.idx[t] !== undefined) pr.total.mu -= R.defense[R.idx[t]];
+      for (const t of red) if (R.idx[t] !== undefined) pb.total.mu -= R.defense[R.idx[t]];
+    }
     // Expected foul points: what each alliance gives away goes to the opponent.
     let fr = 0, fb = 0;
     const fw = R.settings.foulWin || 0;
