@@ -45,6 +45,18 @@
   function isPlayed(m) { return !!(m.played && m.r && m.b && m.r.score != null && m.b.score != null); }
 
   // Build observation rows for one component.
+  // Robot problems recorded in the match editor: m.issues[team] = {type: 'broke'|'noshow',
+  // when: 'auto'|'teleop'|'endgame', what, note}. Legacy m.out[team] = no-show.
+  function robotIssue(m, t) {
+    if (m.issues && m.issues[t]) return m.issues[t];
+    if (m.out && m.out[t]) return { type: 'noshow' };
+    return null;
+  }
+  // A robot that never really played (no-show, or broke in auto) contributed ~nothing.
+  function sitsOut(iss) { return !!iss && (iss.type === 'noshow' || (iss.type === 'broke' && iss.when === 'auto')); }
+  // A mid-match breakdown makes the alliance score unreliable for everyone on it.
+  function spoilsRow(iss) { return !!iss && iss.type === 'broke' && iss.when !== 'auto'; }
+
   function collectRows(event, game, comp, idx, settings, include) {
     const rows = [];
     // Optional recency weighting inside the event: a round ago counts matchDecay×.
@@ -64,17 +76,18 @@
       for (const side of ['r', 'b']) {
         const teams = side === 'r' ? m.red : m.blue;
         const vals = m[side];
-        const out = m.out || {};
+        const iss = teams.map(t => robotIssue(m, t));
         if (perRobot && vals.robots && vals.robots.length === teams.length) {
           teams.forEach((t, k) => {
-            if (out[t] || idx[t] === undefined) return;
+            if (iss[k] || idx[t] === undefined) return; // a robot with a problem says nothing about its ability
             rows.push({ idx: [idx[t]], y: vals.robots[k][comp], w: w0, id: m.key + side, match: true });
           });
           continue;
         }
         const y = vals[comp];
         if (y == null) continue;
-        const ids = teams.filter(t => !out[t] && idx[t] !== undefined).map(t => idx[t]);
+        if (iss.some(spoilsRow)) continue;
+        const ids = teams.filter((t, k) => !sitsOut(iss[k]) && idx[t] !== undefined).map(t => idx[t]);
         if (!ids.length) continue;
         // For per-robot components an alliance total carries 3 robots' worth of noise.
         rows.push({ idx: ids, y, w: perRobot ? w0 / 3 : w0, id: m.key + side, match: true });
@@ -406,7 +419,7 @@
   }
 
   const api = {
-    DEFAULT_SETTINGS, teamCmp, fit, eventThresholds, predictMatch, predictAlliance, allianceDist, bonusMode,
+    DEFAULT_SETTINGS, teamCmp, robotIssue, fit, eventThresholds, predictMatch, predictAlliance, allianceDist, bonusMode,
     standings, allianceRP, winnerOf, isPlayed, sortMatches, matchOrder,
   };
   root.Model = api;

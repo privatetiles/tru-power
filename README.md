@@ -150,4 +150,8 @@ Until then, any other year falls back to a generic model that uses total score p
   - Clearing browser data erases it. Chrome treats the file as a separate site if you move or rename the folder.
 - **Fouls:** results entered by hand without "foul pts received" count fouls as earned points. Those matches are slightly less precise.
 - **Defense:** it isn't modelled explicitly. Research shows it is a weak statistical signal, and "DPR" mostly measures schedule luck. Use scouting notes for defense.
+- **Robot problems:** in the match editor, set a robot to **Broke** (with when, what and an optional note) or **No-show**.
+  - A no-show, or a robot that broke in auto, is treated as contributing nothing that match.
+  - A breakdown later in the match leaves that alliance's score out of the ratings.
+  - Breakdowns show as ⚠ in the match list, in the Teams table's **Problems** column, and on each team's page. They survive TBA refreshes.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.

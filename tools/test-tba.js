@@ -91,7 +91,10 @@ globalThis.fetch = async (url, opts) => {
   // Refresh merge keeps manual results TBA doesn't have yet.
   const unplayed = ev.matches.find(m => !Model.isPlayed(m));
   unplayed.played = true; unplayed.r = { score: 100, total: 100 }; unplayed.b = { score: 90, total: 90 }; unplayed.source = 'manual';
+  const tbaPlayed = ev.matches.find(m => Model.isPlayed(m) && m.source === 'tba');
+  tbaPlayed.issues = { [tbaPlayed.red[0]]: { type: 'broke', when: 'auto', what: 'electrical' } };
   await TBA.refreshMatches(ev, 'KEY');
   assert(Model.isPlayed(ev.matches.find(m => m.key === unplayed.key)), 'manual result kept after refresh');
+  assert.strictEqual(ev.matches.find(m => m.key === tbaPlayed.key).issues[tbaPlayed.red[0]].what, 'electrical', 'robot problems survive a TBA refresh');
   console.log('TBA IMPORT TESTS PASSED');
 })().catch(e => { console.error(e); process.exit(1); });

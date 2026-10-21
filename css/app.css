@@ -176,3 +176,9 @@ input.invalid { border-color: var(--bad); background: var(--bad-soft); }
 /* Team numbers take their alliance's colour (links would otherwise be blue). */
 .alliance.red-t .team, .red-t .team, .red-t a.team, .side.red .team { color: var(--red) !important; }
 .alliance.blue-t .team, .blue-t .team, .blue-t a.team, .side.blue .team { color: var(--blue) !important; }
+/* Robot problem controls in the match editor */
+.robots .problem { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 6px 8px; margin: 0 0 4px; background: var(--bad-soft); border-radius: 6px; }
+.robots .problem input { flex: 1; min-width: 120px; }
+select.status-broke, select.status-noshow { border-color: var(--bad); color: var(--bad); font-weight: 600; }
+.warn { color: var(--bad); font-size: 11px; vertical-align: super; margin-left: 1px; }
+.robots .problem[hidden] { display: none; }

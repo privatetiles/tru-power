@@ -38,6 +38,30 @@
     if (m.comp === 'sf') return 'M' + m.set + (m.num > 1 ? '-' + m.num : '');
     return m.comp.toUpperCase() + m.set + '-' + m.num;
   };
+  const PROBLEM_WHEN = [['auto', 'Auto'], ['teleop', 'Teleop'], ['endgame', 'Endgame']];
+  const PROBLEM_WHAT = [['drivetrain', 'Drivetrain'], ['intake', 'Intake'], ['shooter', 'Shooter'], ['climber', 'Climber'],
+    ['electrical', 'Electrical / comms'], ['bumpers', 'Bumpers'], ['other', 'Other']];
+  const label = (list, v) => (list.find(x => x[0] === v) || [, v || ''])[1];
+  // Short human description of a robot problem, e.g. "broke in teleop · drivetrain".
+  function issueText(iss) {
+    if (!iss) return '';
+    if (iss.type === 'noshow') return 'no-show';
+    return ['broke' + (iss.when ? ' in ' + label(PROBLEM_WHEN, iss.when).toLowerCase() : ''), iss.what ? label(PROBLEM_WHAT, iss.what).toLowerCase() : '']
+      .filter(Boolean).join(' · ');
+  }
+  // Breakdowns/no-shows per team across played matches.
+  function reliability(k) {
+    let played = 0;
+    const list = [];
+    for (const m of S.event.matches) {
+      if (!Model.isPlayed(m) || !(m.red.includes(k) || m.blue.includes(k))) continue;
+      played++;
+      const iss = Model.robotIssue(m, k);
+      if (iss) list.push({ m, iss });
+    }
+    return { played, list };
+  }
+
   function toast(msg, ms = 2600) {
     const t = $('#toast');
     t.textContent = msg; t.hidden = false;
@@ -109,6 +133,7 @@
       expRank: sim ? sim.expRank : null, p8: sim ? sim.p8 : null, p1: sim ? sim.p1 : null, p4: sim ? sim.p4 : null,
       sim, scout: sc,
       starred: !!(S.event.starred || {})[k], picked: !!(S.event.picked || {})[k],
+      ...(() => { const rel = reliability(k); return { played: rel.played, problems: rel.list.length, problemText: rel.list.map(x => `${matchLabel(x.m)} ${issueText(x.iss)}${x.iss.note ? ' (' + x.iss.note + ')' : ''}`).join('; ') }; })(),
     };
   }
 
@@ -255,7 +280,13 @@
     return thr != null ? `at least ${thr} ${what}` : what;
   }
 
-  function allianceHtml(teams, c) { return `<span class="alliance ${c}">${teams.map(t => teamLink(t)).join(' ')}</span>`; }
+  // Alliance team list; with a match, robots marked broke / no-show get a ⚠.
+  function allianceHtml(teams, c, m) {
+    return `<span class="alliance ${c}">${teams.map(t => {
+      const iss = m ? Model.robotIssue(m, t) : null;
+      return teamLink(t) + (iss ? `<span class="warn" title="${esc(tnum(t) + ' ' + issueText(iss) + (iss.note ? ' — ' + iss.note : ''))}">⚠</span>` : '');
+    }).join(' ')}</span>`;
+  }
 
   // ----- sortable table -----
   function table(id, cols, rows, opts = {}) {
@@ -309,6 +340,7 @@
     );
     for (const c of scoutCols) cols.push({ key: 'sc:' + c, label: esc(c), n: 1, title: 'Scouting average', sortVal: r => r.scout[c], fmt: r => f1(r.scout[c]) });
     cols.push(
+      { key: 'problems', label: 'Problems', n: 1, title: 'Matches where this robot broke or was a no-show (marked in the match editor)', sortVal: r => r.problems, fmt: r => (r.problems ? `<span class="neg" title="${esc(r.problemText)}">${r.problems}/${r.played}</span>` : `<span class="sd">0</span>`) },
       { key: 'notes', label: 'Notes', nosort: true, fmt: r => { const n = (S.event.notes || {})[r.key]; return n ? `<span class="sd" title="${esc(n)}">${esc(n.slice(0, 24))}${n.length > 24 ? '…' : ''}</span>` : ''; } },
       { key: 'picked', label: 'Picked', sortVal: r => (r.picked ? 1 : 0), fmt: r => `<input type="checkbox" data-pick="${r.key}" ${r.picked ? 'checked' : ''} title="Mark as picked during alliance selection">` },
     );
@@ -372,12 +404,12 @@
       const surr = (m.redSurr || []).concat(m.blueSurr || []);
       return `<tr class="${ot && (m.red.includes(ot) || m.blue.includes(ot)) ? 'ours' : ''}">
         <td><a data-match="${esc(m.key)}"><b>${matchLabel(m)}</b></a>${m.source === 'manual' ? ' <span class="pill muted" title="Entered by hand">manual</span>' : ''}</td>
-        <td>${allianceHtml(m.red, 'red-t')}</td><td>${allianceHtml(m.blue, 'blue-t')}</td>
+        <td>${allianceHtml(m.red, 'red-t', m)}</td><td>${allianceHtml(m.blue, 'blue-t', m)}</td>
         <td><span class="probbar" title="Red win ${pct(p.pRed, 1)}"><span class="r" style="width:${100 * p.pRed}%">${p.pRed >= 0.2 ? pct(p.pRed) : ''}</span><span class="b" style="width:${100 * (1 - p.pRed)}%">${p.pRed <= 0.8 ? pct(1 - p.pRed) : ''}</span></span></td>
         <td class="n">${f1(p.red.score, 0)}–${f1(p.blue.score, 0)}</td>
         <td class="sd">${played && m.comp === 'qm' ? '' : bonusTxt}</td>
         <td class="n">${actual}</td>
-        <td>${surr.length ? `<span class="pill muted" title="Surrogate = an extra match the schedule needed. It earns these teams no ranking points and doesn't count toward their ranking score (their robot performance still counts toward ratings).">surrogate: ${surr.map(tnum).join(', ')}</span>` : ''}</td>
+        <td>${m.red.concat(m.blue).map(t => { const iss = Model.robotIssue(m, t); return iss ? `<span class="pill bad" title="${esc(iss.note || '')}">${esc(tnum(t))} ${esc(issueText(iss))}</span> ` : ''; }).join('')}${surr.length ? `<span class="pill muted" title="Surrogate = an extra match the schedule needed. It earns these teams no ranking points and doesn't count toward their ranking score (their robot performance still counts toward ratings).">surrogate: ${surr.map(tnum).join(', ')}</span>` : ''}</td>
         <td><button class="btn small" data-match="${esc(m.key)}">${played ? 'Edit' : 'Enter'}</button></td></tr>`;
     }).join('');
     return `<div class="toolbar">
@@ -627,8 +659,8 @@
         }
       }
       const surr = ((onRed ? m.redSurr : m.blueSurr) || []).includes(k);
-      const out = m.out && m.out[k];
-      return `<tr><td><a data-match="${esc(m.key)}">${matchLabel(m)}</a>${surr ? ' <span class="pill muted">surrogate</span>' : ''}${out ? ' <span class="pill bad">no-show</span>' : ''}</td>
+      const iss = Model.robotIssue(m, k);
+      return `<tr><td><a data-match="${esc(m.key)}">${matchLabel(m)}</a>${surr ? ' <span class="pill muted">surrogate</span>' : ''}${iss ? ` <span class="pill bad" title="${esc(iss.note || '')}">${esc(issueText(iss))}</span>` : ''}</td>
         <td class="${onRed ? 'red-t' : 'blue-t'}">${onRed ? 'Red' : 'Blue'}</td><td>${partners.map(t => teamLink(t)).join(' ')}</td><td>${opps.map(t => teamLink(t)).join(' ')}</td>
         <td class="n">${pct(pw)}</td><td>${res}</td></tr>`;
     }).join('');
@@ -646,6 +678,8 @@
       <div class="split">
         <div><h3>Ratings</h3><table><thead><tr><th></th><th class="n">Now</th><th class="n">Rank</th><th class="n" title="Average of earlier events">Prior</th><th class="n" title="Matches of data at this event">Data</th></tr></thead><tbody>${compRows}</tbody></table>
           <p class="help">${ev.priorMeta && ev.priorMeta.count && ev.priorMeta.count[k] ? `Prior from ${ev.priorMeta.count[k]} earlier event(s).` : 'No earlier-event data — starts near event average.'} Plain OPR: ${f1(r.opr)}.</p>
+          ${(() => { const rel = reliability(k); if (!rel.played) return ''; if (!rel.list.length) return `<p class="help">Reliability: no problems recorded in ${rel.played} matches.</p>`;
+            return `<p class="help"><b class="neg">Reliability: problems in ${rel.list.length} of ${rel.played} matches</b> — ${rel.list.map(x => `${matchLabel(x.m)} ${esc(issueText(x.iss))}${x.iss.note ? ' (' + esc(x.iss.note) + ')' : ''}`).join('; ')}. Those matches are left out of its rating.</p>`; })()}
           ${L ? `<p class="help">Schedule: partners vs. opponents ${sgn(L.tailwind, 1)} pts/match vs. average. Expected RS on this schedule ${f1(L.eSched, 2)} vs. ${f1(L.eRand, 2)} on a random one.</p>` : ''}
           ${sc && sc.n ? `<h3>Scouting (${sc.n} entries)</h3><table><tbody>${scCols.filter(c => sc[c] != null).map(c => `<tr><td>${esc(c)}</td><td class="n">${f1(sc[c])}</td></tr>`).join('')}</tbody></table>` : ''}
           <h3 style="margin-top:12px">Notes</h3><textarea id="teamNotes" data-team-notes="${k}" rows="4" placeholder="Drive team notes, mechanisms, reliability…">${esc((ev.notes || {})[k] || '')}</textarea>
@@ -669,21 +703,29 @@
       const rp = `<div class="field"><label>RP earned (optional)</label><input type="number" min="0" data-f="${side}.rp" value="${v.rp != null ? v.rp : ''}"></div>`;
       const bon = g.bonuses.length ? `<div class="checks">${g.bonuses.map(b => `<label><input type="checkbox" data-b="${side}.${b.key}" ${v.bonus && v.bonus[b.key] ? 'checked' : ''}> ${b.label}</label>`).join('')}</div>` : '';
       const lv = g.robotLevels;
-      const robots = `<div class="robots"><span class="sd">Team</span><span class="sd">${lv ? 'Auto tower' : ''}</span><span class="sd">${lv ? 'End tower' : ''}</span><span class="sd">No-show</span>
+      const robots = `<div class="robots"><span class="sd">Team</span><span class="sd">${lv ? 'Auto tower' : ''}</span><span class="sd">${lv ? 'End tower' : ''}</span><span class="sd">Robot</span>
         ${[0, 1, 2].map(k => {
           const rb = v.robots && v.robots[k];
           const t = teams[k] || '';
+          const iss = t ? Model.robotIssue(m, t) : null;
+          const st = iss ? iss.type : 'ok';
+          const opt = (list, cur) => list.map(([val, txt]) => `<option value="${val}" ${cur === val ? 'selected' : ''}>${txt}</option>`).join('');
           return `<input class="tm" data-t="${side}.${k}" value="${esc(tnum(t))}">
             ${lv ? `<select data-ra="${side}.${k}">${lv.auto.map(o => `<option ${rb && rb.autoLevel === o ? 'selected' : ''}>${o}</option>`).join('')}</select>
             <select data-re="${side}.${k}">${lv.end.map(o => `<option ${rb && rb.endLevel === o ? 'selected' : ''}>${o}</option>`).join('')}</select>` : '<span></span><span></span>'}
-            <input type="checkbox" data-out="${side}.${k}" ${t && m.out && m.out[t] ? 'checked' : ''}>`;
+            <select data-st="${side}.${k}" class="status-${st}">${opt([['ok', 'OK'], ['broke', 'Broke'], ['noshow', 'No-show']], st)}</select>
+            <div class="problem" data-pb="${side}.${k}" ${st === 'broke' ? '' : 'hidden'}>
+              <label>When <select data-pw="${side}.${k}">${opt(PROBLEM_WHEN, (iss && iss.when) || 'teleop')}</select></label>
+              <label>What <select data-px="${side}.${k}">${opt(PROBLEM_WHAT, (iss && iss.what) || 'drivetrain')}</select></label>
+              <input data-pn="${side}.${k}" placeholder="Note (optional)" value="${esc((iss && iss.note) || '')}">
+            </div>`;
         }).join('')}</div>`;
       return `<div class="side ${side === 'r' ? 'red' : 'blue'}"><h4>${label}</h4>${robots}${fields}${rp}${bon}</div>`;
     };
     openModal(`<h2>${isNew ? 'New match' : matchLabel(m)}</h2>
       <div class="toolbar"><label>Level <select id="mComp">${['qm', 'sf', 'f'].map(c => `<option value="${c}" ${m.comp === c ? 'selected' : ''}>${{ qm: 'Qualification', sf: 'Playoff', f: 'Final' }[c]}</option>`).join('')}</select></label>
         <label>Number <input id="mNum" type="number" min="1" value="${m.comp === 'sf' ? m.set : m.num}" style="width:70px"></label>
-        <span class="help">Only the final score is required. Tower levels per robot are the most valuable extra info (they rate each robot directly).</span></div>
+        <span class="help">Only the final score is required. Tower levels per robot are the most valuable extra info. Mark a robot <b>Broke</b> or <b>No-show</b> so the bad match doesn't drag down its rating.</span></div>
       <div class="form-grid">${sideHtml('r', 'Red', m.red)}${sideHtml('b', 'Blue', m.blue)}</div>
       <p class="toolbar" style="margin-top:14px"><button class="btn primary" data-act="save-match" data-key="${esc(isNew ? '' : m.key)}">Save</button>
         ${!isNew && Model.isPlayed(m) ? '<button class="btn" data-act="clear-result" data-key="' + esc(m.key) + '">Clear result</button>' : ''}
@@ -709,12 +751,16 @@
     if (!m) m = { redSurr: [], blueSurr: [], redDQ: [], blueDQ: [] };
     if (oldKey && oldKey !== key) ev.matches = ev.matches.filter(x => x.key !== oldKey);
     Object.assign(m, { key, comp, set: comp === 'sf' ? n : 1, num: comp === 'sf' ? 1 : n, red, blue, source: 'manual', updated: Date.now() });
-    m.out = {};
+    m.issues = {};
+    delete m.out;
     for (const side of ['r', 'b']) [0, 1, 2].forEach(k => {
-      const el = document.querySelector(`[data-out="${side}.${k}"]`);
       const t = (side === 'r' ? red : blue)[k];
-      if (el && el.checked && t) m.out[t] = true;
+      const st = val(`[data-st="${side}.${k}"]`);
+      if (!t || !st || st === 'ok') return;
+      m.issues[t] = st === 'noshow' ? { type: 'noshow' }
+        : { type: 'broke', when: val(`[data-pw="${side}.${k}"]`), what: val(`[data-px="${side}.${k}"]`), note: val(`[data-pn="${side}.${k}"]`) };
     });
+    if (!Object.keys(m.issues).length) delete m.issues;
     const sides = {};
     for (const side of ['r', 'b']) {
       const v = {};
@@ -949,9 +995,9 @@
 
   function exportCSV() {
     const rows = S.R.teams.map(teamRow).sort((a, b) => b.tp - a.tp);
-    const head = ['team', 'name', 'true_potential', 'tp_sd', 'auto', 'fuel', 'auto_fuel', 'tower', 'fouls_given', 'opr', 'rank', 'rs', 'adj_rs', 'schedule_luck', 'ease_pct', 'true_rank', 'proj_rank', 'p_top8', 'notes'];
+    const head = ['team', 'name', 'true_potential', 'tp_sd', 'auto', 'fuel', 'auto_fuel', 'tower', 'fouls_given', 'opr', 'rank', 'rs', 'adj_rs', 'schedule_luck', 'ease_pct', 'true_rank', 'proj_rank', 'p_top8', 'problems', 'notes'];
     const q = v => (typeof v === 'string' ? '"' + v.replace(/"/g, '""') + '"' : v == null || !isFinite(v) ? '' : +v.toFixed(3));
-    const lines = [head.join(',')].concat(rows.map(r => [r.num, r.name, r.tp, r.tpSd, r.auto, r.fuel, r.autoFuel, r.tower, r.fouls, r.opr, r.rank, r.rs, r.adjRS, r.luck, r.easePct, r.trueRank, r.expRank, r.p8, (S.event.notes || {})[r.key] || ''].map(q).join(',')));
+    const lines = [head.join(',')].concat(rows.map(r => [r.num, r.name, r.tp, r.tpSd, r.auto, r.fuel, r.autoFuel, r.tower, r.fouls, r.opr, r.rank, r.rs, r.adjRS, r.luck, r.easePct, r.trueRank, r.expRank, r.p8, r.problemText, (S.event.notes || {})[r.key] || ''].map(q).join(',')));
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `${S.event.key}-true-potential.csv`;
@@ -1069,6 +1115,12 @@
     }
     if (el.id === 'importFile' && el.files[0]) { readFile(el.files[0], importJSON); el.value = ''; return; }
     if (el.id === 'scoutFile' && el.files[0]) { if (!S.event) { toast('Load an event first.'); return; } readFile(el.files[0], importScouting); el.value = ''; return; }
+    if (el.dataset.st) {
+      const box = document.querySelector(`[data-pb="${el.dataset.st}"]`);
+      if (box) box.hidden = el.value !== 'broke';
+      el.className = 'status-' + el.value;
+      return;
+    }
     if (el.dataset.ra || el.dataset.re) {
       // Keep the alliance tower total in sync with per-robot levels.
       const side = (el.dataset.ra || el.dataset.re)[0];

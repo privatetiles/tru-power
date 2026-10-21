@@ -64,6 +64,24 @@ for (const s of st.slice(0, 8)) {
   console.log(`  #${String(s.rank).padEnd(3)} ${s.team.padEnd(9)} ${s.rs.toFixed(2)}  ${L.adjRS.toFixed(2)}  ${L.luck >= 0 ? '+' : ''}${L.luck.toFixed(2)}  ${L.easePct.toFixed(0).padStart(3)}    ${String(L.trueRank).padStart(3)}     ${(100 * S.p8).toFixed(0)}%`);
 }
 
+// Robot problems: a breakdown should stop a bad match from dragging a robot's rating down.
+{
+  const ev2 = JSON.parse(JSON.stringify(ev));
+  const t = ev2.teams[3];
+  const mine = ev2.matches.filter(m => Model.isPlayed(m) && (m.red.includes(t) || m.blue.includes(t)));
+  const worst = mine.map(m => ({ m, side: m.red.includes(t) ? 'r' : 'b' })).sort((a, b) => a.m[a.side].total - b.m[b.side].total)[0];
+  worst.m[worst.side].total = 0; worst.m[worst.side].fuel = 0; // a disastrous match
+  const before = Model.fit(ev2, game).comps.total.mean[R.idx[t]];
+  worst.m.issues = { [t]: { type: 'broke', when: 'teleop', what: 'drivetrain' } };
+  const after = Model.fit(ev2, game).comps.total.mean[R.idx[t]];
+  worst.m.issues = { [t]: { type: 'noshow' } };
+  const noshow = Model.fit(ev2, game).comps.total.mean[R.idx[t]];
+  console.log(`breakdown handling: TP with bad match ${before.toFixed(1)} → marked broke ${after.toFixed(1)}, no-show ${noshow.toFixed(1)}`);
+  assert(after > before + 1, 'marking a breakdown should remove the penalty from that match');
+  assert.strictEqual(Model.robotIssue(worst.m, t).type, 'noshow');
+  assert.strictEqual(Model.robotIssue({ out: { [t]: true } }, t).type, 'noshow', 'legacy no-show flag still works');
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };

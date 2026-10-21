@@ -179,6 +179,7 @@
       const old = byKey[m.key];
       if (old && old.played && !m.played) continue; // keep manual result
       if (old && old.out) m.out = old.out;
+      if (old && old.issues) m.issues = old.issues; // robot problems are ours, TBA doesn't know them
       byKey[m.key] = m;
     }
     event.matches = root.Model.sortMatches(Object.values(byKey));
