@@ -410,140 +410,118 @@
   }
 
   // ----- Alliance selection -----
-  // event.alliances = { n, picks: [[pick1, pick2], ...] }. Captains are never stored:
-  // they are recomputed from the rankings, the way FRC seats them. Alliance k's captain
-  // is the best-ranked team not already a captain or taken by an earlier alliance's
-  // first-round pick (round-2 picks happen after every captain is seated).
+  // event.alliances = { n, slots: [[captain, pick1, pick2], ...] }. Every alliance starts
+  // empty and is filled by hand (drag & drop). The "captain" tags live in the available
+  // list: they mark the teams that would be captains right now, following how FRC seats
+  // them, and move to the next-ranked team when a would-be captain is placed as a pick.
+  const SLOT_NAMES = ['Captain', '1st pick', '2nd pick'];
+
   function allianceState() {
     const ev = S.event;
-    const a = ev.alliances = ev.alliances || { n: Math.min(8, Math.floor(ev.teams.length / 3)) || 1, picks: [] };
-    while (a.picks.length < a.n) a.picks.push([null, null]);
-    a.picks.length = a.n;
+    let a = ev.alliances;
+    if (!a || !a.slots) a = ev.alliances = { n: Math.min(8, Math.floor(ev.teams.length / 3)) || 1, slots: [] };
+    while (a.slots.length < a.n) a.slots.push([null, null, null]);
+    a.slots.length = a.n;
     return a;
   }
 
-  // Seeding order used for captains: current rank, then (for teams without one) true rank.
+  // Seeding order: current rank, then (for teams without one) true rank.
   function seedOrder() {
     const ranked = S.st.filter(s => s.rank).map(s => s.team);
     const rest = S.R.teams.filter(t => !ranked.includes(t)).sort((x, y) => (S.luck[x] ? S.luck[x].trueRank : 999) - (S.luck[y] ? S.luck[y].trueRank : 999));
     return ranked.concat(rest);
   }
 
-  function computeCaptains(a) {
+  // Who would captain each alliance whose captain slot is still empty: the best-ranked
+  // team not already placed and not expected to captain an earlier alliance.
+  function expectedCaptains(a) {
     const order = seedOrder();
-    const used = new Set(), captains = [];
+    const used = new Set(a.slots.flat().filter(Boolean));
+    const out = [];
     for (let k = 0; k < a.n; k++) {
-      captains[k] = order.find(t => !used.has(t)) || null;
-      if (captains[k]) used.add(captains[k]);
-      const p1 = a.picks[k][0];
-      if (p1) used.add(p1);
+      if (a.slots[k][0]) { out[k] = null; continue; }
+      const t = order.find(x => !used.has(x)) || null;
+      out[k] = t;
+      if (t) used.add(t);
     }
-    return captains;
+    return out;
   }
 
-  // Where a team sits on the board: {k, slot: 'cap'|0|1} or null.
   function allianceOf(t) {
     const a = S.event && S.event.alliances;
-    if (!a || !a.picks) return null;
-    for (let k = 0; k < a.picks.length; k++) for (let j = 0; j < 2; j++) if (a.picks[k][j] === t) return { k, slot: j };
+    if (!a || !a.slots) return null;
+    for (let k = 0; k < a.slots.length; k++) for (let j = 0; j < 3; j++) if (a.slots[k][j] === t) return { k, slot: j };
     return null;
-  }
-
-  // After any change, picks that became captains (or duplicate captains) go back to the pool.
-  function normalizeAlliances(a) {
-    const bumped = [];
-    for (let guard = 0; guard < 20; guard++) {
-      const caps = computeCaptains(a);
-      let changed = false;
-      for (let k = 0; k < a.n && !changed; k++) for (let j = 0; j < 2 && !changed; j++) {
-        const t = a.picks[k][j];
-        if (!t) continue;
-        const ci = caps.indexOf(t);
-        // A captain can only be taken as a first-round pick by an earlier alliance.
-        if (ci >= 0 && !(j === 0 && k < ci)) { a.picks[k][j] = null; bumped.push(t); changed = true; }
-      }
-      if (!changed) break;
-    }
-    return bumped;
   }
 
   function placeTeam(t, k, j) {
     const a = allianceState();
-    const caps = computeCaptains(a);
-    const ci = caps.indexOf(t);
-    if (ci >= 0 && !(j === 0 && k < ci)) {
-      toast(ci === 0 ? `${tnum(t)} is the #1 seed — Alliance 1's captain can't be picked.`
-        : `${tnum(t)} is Alliance ${ci + 1}'s captain: only an earlier alliance's first pick can take them.`, 4000);
-      return;
-    }
     const from = allianceOf(t);
-    if (from) a.picks[from.k][from.slot] = null;
-    a.picks[k][j] = t;
-    const bumped = normalizeAlliances(a);
-    if (bumped.length) toast(`${bumped.map(tnum).join(', ')} became a captain and went back to the available list.`, 4500);
+    const prev = a.slots[k][j];
+    if (from) a.slots[from.k][from.slot] = null;
+    // Dropping onto an occupied slot swaps the two teams (or sends the old one back).
+    if (prev && prev !== t && from) a.slots[from.k][from.slot] = prev;
+    a.slots[k][j] = t;
     persist(); render();
   }
 
   function removeTeam(t) {
     const a = allianceState(), from = allianceOf(t);
-    if (from) a.picks[from.k][from.slot] = null;
-    normalizeAlliances(a);
+    if (from) a.slots[from.k][from.slot] = null;
     persist(); render();
   }
 
-  // Next slot in official snake order: round 1 A1→A8, round 2 A8→A1.
+  // Next empty slot in the order selection happens: each captain is seated then makes
+  // their 1st pick (A1 → A8), then 2nd picks go back up (A8 → A1).
   function nextSlot(a) {
-    for (let k = 0; k < a.n; k++) if (!a.picks[k][0]) return { k, j: 0 };
-    for (let k = a.n - 1; k >= 0; k--) if (!a.picks[k][1]) return { k, j: 1 };
+    for (let k = 0; k < a.n; k++) for (const j of [0, 1]) if (!a.slots[k][j]) return { k, j };
+    for (let k = a.n - 1; k >= 0; k--) if (!a.slots[k][2]) return { k, j: 2 };
     return null;
   }
 
   function renderAlliances() {
     const a = allianceState();
-    const caps = computeCaptains(a);
+    const exp = expectedCaptains(a);
+    const capFor = Object.fromEntries(exp.map((t, k) => [t, k]).filter(x => x[0]));
     const rows = Object.fromEntries(S.R.teams.map(t => [t, teamRow(t)]));
-    const ot = S.settings.ourTeam && tkey(S.settings.ourTeam);
     const next = nextSlot(a);
     const chip = (t, opts = {}) => {
       const r = rows[t];
       if (!t || !r) return '';
+      const cap = capFor[t];
       return `<div class="chip ${ours(t) ? 'ours' : ''}" draggable="true" data-drag="${esc(t)}" title="${esc(r.name)} — drag to move">
-        ${teamLink(t)}${opts.captain ? ' <span class="pill good">captain</span>' : ''}
+        ${teamLink(t)}${opts.pool && cap != null ? ` <span class="pill good" title="Would captain Alliance ${cap + 1} right now">captain · A${cap + 1}</span>` : ''}
         <span class="sd">${f1(r.pickScore)}</span>${r.relQ != null && r.relQ > 0.1 ? ` <span class="pill bad" title="${esc(r.problemText)}">${pct(1 - r.relQ)}</span>` : ''}
         ${opts.removable ? `<button class="x" data-unpick="${esc(t)}" title="Back to available">×</button>` : ''}</div>`;
     };
-    // Alliance strength = expected points per match from its three robots (reliability included).
-    const strength = k => {
-      const ts = [caps[k]].concat(a.picks[k]).filter(Boolean);
-      return ts.length ? Model.allianceDist(S.R, ts, 'total').mu : null;
-    };
-    const strengths = Array.from({ length: a.n }, (_, k) => strength(k));
+    // Alliance strength = expected points per match from its robots (reliability included).
+    const strengths = a.slots.map(sl => { const ts = sl.filter(Boolean); return ts.length ? Model.allianceDist(S.R, ts, 'total').mu : null; });
     const order = strengths.map((v, k) => [v, k]).filter(x => x[0] != null).sort((x, y) => y[0] - x[0]).map(x => x[1]);
-    const cards = Array.from({ length: a.n }, (_, k) => {
+    const cards = a.slots.map((sl, k) => {
       const slot = j => {
-        const t = a.picks[k][j];
+        const t = sl[j];
         const isNext = next && next.k === k && next.j === j;
-        return `<div class="slot ${isNext ? 'next' : ''}" data-slot="${k}:${j}">${t ? chip(t, { removable: true }) : `<span class="sd">${j === 0 ? '1st' : '2nd'} pick${isNext ? ' — next' : ''}</span>`}</div>`;
+        return `<div class="slot ${j === 0 ? 'cap' : ''} ${isNext ? 'next' : ''}" data-slot="${k}:${j}">${t ? chip(t, { removable: true }) : `<span class="sd">${SLOT_NAMES[j]}${isNext ? ' — next' : ''}</span>`}</div>`;
       };
       const sv = strengths[k];
-      return `<div class="card alliance-card ${caps[k] && ours(caps[k]) || a.picks[k].some(ours) ? 'hl' : ''}">
-        <h3>Alliance ${k + 1}${sv != null ? ` <span class="sd" style="text-transform:none;letter-spacing:0">· ${f1(sv, 0)} pts · #${order.indexOf(k) + 1} strongest</span>` : ''}</h3>
-        <div class="slot cap" data-slot="${k}:cap">${caps[k] ? chip(caps[k], { captain: true }) : '<span class="sd">—</span>'}</div>
-        ${slot(0)}${slot(1)}</div>`;
+      return `<div class="card alliance-card ${sl.some(ours) ? 'hl' : ''}">
+        <h3>Alliance ${k + 1}${sv != null ? ` <span class="sd" style="text-transform:none;letter-spacing:0">· ${f1(sv, 0)} pts${order.length > 1 ? ' · #' + (order.indexOf(k) + 1) + ' strongest' : ''}</span>` : ''}</h3>
+        ${slot(0)}${slot(1)}${slot(2)}</div>`;
     }).join('');
-    const placed = new Set(caps.filter(Boolean).concat(a.picks.flat().filter(Boolean)));
+    const placed = new Set(a.slots.flat().filter(Boolean));
     const pool = S.R.teams.filter(t => !placed.has(t)).map(t => rows[t]).filter(r => r.tp != null).sort((x, y) => y.pickScore - x.pickScore);
     return `<div class="toolbar">
         <label>Alliances <select id="nAlliances">${[2, 3, 4, 5, 6, 7, 8].map(n => `<option ${a.n === n ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-        <span class="help">${next ? `Next pick: <b>Alliance ${next.k + 1}, ${next.j === 0 ? '1st' : '2nd'} pick</b> (snake order)` : 'All alliances are full.'}</span>
+        <span class="help">${next ? `Next: <b>Alliance ${next.k + 1} ${SLOT_NAMES[next.j].toLowerCase()}</b>` : 'All alliances are full.'}</span>
         <span class="spacer"></span>
-        <button class="btn small danger" data-act="reset-alliances">Reset picks</button>
+        <button class="btn small danger" data-act="reset-alliances">Clear all alliances</button>
       </div>
-      <p class="help">Captains fill in automatically from the current rankings. When a captain-to-be is picked, everyone moves up and the next team becomes a captain. Drag teams onto a pick slot, between slots, or back to the list. A lower alliance's captain can be dragged onto an earlier alliance's 1st pick. <b>Pick ▸</b> fills the next slot in order. Strength = expected points per match of the three robots.</p>
+      <p class="help">Alliances start empty — drag teams in as they're announced (onto any slot, between slots, or back to the list; dropping on a filled slot swaps). <b>Add ▸</b> fills the next slot in selection order.
+        The <span class="pill good">captain · A#</span> tags show who would captain each alliance right now: pick a would-be captain and the tag moves to the next-ranked team. Strength = expected points per match of the robots placed.</p>
       <div class="sel-layout">
         <div class="alliance-grid">${cards}</div>
         <div class="card pool" data-slot="pool"><h3>Available · best first</h3>
-          ${pool.map(r => `<div class="pool-row">${chip(r.key)}<span class="sd">TP ${f1(r.tp)} · rank ${r.rank || '–'}</span>${next ? `<button class="btn small" data-pickteam="${esc(r.key)}">Pick ▸</button>` : ''}</div>`).join('') || '<p class="help">Everyone is on an alliance.</p>'}
+          ${pool.map(r => `<div class="pool-row">${chip(r.key, { pool: true })}<span class="sd">TP ${f1(r.tp)} · rank ${r.rank || '–'}</span>${next ? `<button class="btn small" data-pickteam="${esc(r.key)}">Add ▸</button>` : ''}</div>`).join('') || '<p class="help">Everyone is on an alliance.</p>'}
         </div>
       </div>`;
   }
@@ -1233,7 +1211,7 @@
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
     'reset-alliances': el => {
       if (el.dataset.confirm !== '1') { el.dataset.confirm = '1'; el.textContent = 'Click again to reset'; return; }
-      const a = allianceState(); a.picks = []; allianceState(); persist(); render();
+      const a = allianceState(); a.slots = []; allianceState(); persist(); render();
     },
     'export-csv': exportCSV,
     'export-event': () => Store.download(`${S.event.key}-trupower.json`, { trupower: 'event', exported: Date.now(), event: S.event }),
@@ -1303,7 +1281,7 @@
     const el = e.target;
     if (el.id === 'eventSelect' && el.value) { setEvent(Store.loadEvent(el.value)); return; }
     if (el.dataset.pick) { S.event.picked = S.event.picked || {}; S.event.picked[el.dataset.pick] = el.checked; persist(); render(); return; }
-    if (el.id === 'nAlliances') { const a = allianceState(); a.n = +el.value; allianceState(); normalizeAlliances(a); persist(); render(); return; }
+    if (el.id === 'nAlliances') { const a = allianceState(); a.n = +el.value; allianceState(); persist(); render(); return; }
     if (el.id === 'hidePicked') { S.hidePicked = el.checked; render(); return; }
     if (el.id === 'matchFilter') { S.matchFilter = el.value; render(); return; }
     if (el.id === 'nSims') { S.settings.nSims = +el.value; Store.saveSettings(S.settings); S.sim = null; render(); scheduleSim(); return; }
@@ -1399,7 +1377,6 @@
     const where = s.dataset.slot;
     if (where === 'pool') { removeTeam(t); return; }
     const [k, j] = where.split(':');
-    if (j === 'cap') { toast('Captains are set by the rankings — drag a team onto a pick slot instead.'); return; }
     placeTeam(t, +k, +j);
   });
 

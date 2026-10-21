@@ -198,3 +198,9 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .pool { position: sticky; top: 100px; max-height: calc(100vh - 120px); overflow-y: auto; }
 .pool-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--line); }
 .pool-row .btn { margin-left: auto; }
+.pill, .btn { white-space: nowrap; }
+.sel-layout { grid-template-columns: minmax(0, 1fr) 400px; }
+.pool-row { flex-wrap: nowrap; }
+.pool-row .chip { flex: none; }
+.pool-row > .sd { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pool-row .btn { flex: none; }

@@ -157,9 +157,8 @@ Until then, any other year falls back to a generic model that uses total score p
   - **Reliability in predictions:** each team gets a breakdown chance from its recorded problems, blended with the event average as if from 6 matches. Predictions, the ranking forecast and schedule luck all account for it; switch it off in Data → Settings. With nothing recorded it changes nothing.
 - **Best Picks tab:** teams ranked by **Pick score**, the points per match you can count on (True Potential × reliability − fouls given away). Tick *Picked* during alliance selection and the list re-ranks what's left; your own team is left out.
 - **Alliance Selection tab:**
-  - Captains fill in from the rankings and move up automatically when a would-be captain is picked. If Alliance 1 picks the #2 seed, #3 becomes Alliance 2's captain and so on, down to #9 captaining Alliance 8.
-  - Drag teams onto pick slots, between slots, or back to the available list. **Pick ▸** fills the next slot in snake order.
-  - Illegal picks are refused, e.g. Alliance 1's captain or a later pick of a seated captain.
+  - Every alliance starts empty. Drag teams in as they're announced: onto any slot, between slots, or back to the list. Dropping onto a filled slot swaps the two teams.
+  - **Add ▸** fills the next slot in selection order.
+  - Green **captain · A#** tags in the available list show who would captain each alliance right now. When a would-be captain is placed as a pick, the tag moves to the next-ranked team. For example, if Alliance 1 picks the #2 seed, #2 loses its tag and #9 becomes the expected captain of Alliance 8.
   - Each alliance shows its expected points per match, and placed teams are marked as picked on Best Picks.
-  - Declines aren't modelled: if a team declines, simply don't place it.
 - **Scouting data:** a CSV import is supported. Link a column (e.g. per-robot fuel scored) to a component so it feeds the rating directly.
