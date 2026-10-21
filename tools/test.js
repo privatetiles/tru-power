@@ -141,6 +141,34 @@ for (const s of st.slice(0, 8)) {
   assert(inside / n > 0.7 && inside / n < 0.92, 'likely ranges should be roughly honest');
 }
 
+// Robot path markers: snap exactly onto the traced line and point along its tangent.
+{
+  const P = require('../js/paths.js');
+  const path = [];
+  for (let i = 0; i <= 50; i++) P.addPoint(path, 100 + i * 8, 250 + 120 * Math.sin(i / 8)); // a wavy route
+  P.addPoint(path, path[path.length - 1][0] + 1, path[path.length - 1][1]);                 // too close: dropped
+  assert(path.length === 51, 'points closer than the minimum step are dropped');
+  let worstOff = 0, worstAngle = 0;
+  for (let k = 0; k < 200; k++) {
+    const x = 100 + Math.random() * 400, y = 130 + Math.random() * 240;
+    const hit = P.project(path, x, y);
+    const ps = P.pose(path, hit.seg, hit.t);
+    // On the line: the marker's position equals the projected point on its segment.
+    worstOff = Math.max(worstOff, Math.hypot(ps.x - hit.x, ps.y - hit.y));
+    // Tangent: the marker's direction equals that segment's direction.
+    const [a, b] = [path[hit.seg], path[hit.seg + 1]];
+    const segAngle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    worstAngle = Math.max(worstAngle, Math.abs(Math.atan2(Math.sin(ps.angle - segAngle), Math.cos(ps.angle - segAngle))));
+    // Nothing on the path is closer than the projected point.
+    for (const q of path) assert(Math.hypot(q[0] - x, q[1] - y) >= hit.dist - 1e-9);
+  }
+  assert(worstOff < 1e-9 && worstAngle < 1e-9, 'markers lie on the line along its tangent');
+  assert(P.project(path, 900, 20).dist > P.SNAP, 'a click far from the line is too far to snap');
+  const dup = [[0, 0], [10, 0], [10, 0], [10, 10]];
+  assert(Math.abs(P.pose(dup, 1, 0.5).angle - Math.PI / 2) < 1e-9, 'a zero-length segment borrows the next direction');
+  console.log(`path markers: max distance from line ${worstOff.toExponential(1)}, max tangent error ${worstAngle.toExponential(1)} rad over 200 random clicks`);
+}
+
 // Generic game path (scores only).
 const g19 = Games.getGame(2019);
 const ev19 = { teams: ev.teams, year: 2019, matches: ev.matches.map(x => x.played ? { ...x, r: { score: x.r.score, total: x.r.score }, b: { score: x.b.score, total: x.b.score } } : x) };

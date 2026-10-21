@@ -260,3 +260,31 @@ select.status-broke, select.status-noshow { border-color: var(--bad); color: var
 .counter .ctrl { display: flex; align-items: center; gap: 10px; }
 .counter .count { font-size: 34px; font-weight: 700; min-width: 64px; text-align: center; font-variant-numeric: tabular-nums; }
 .btn.big { padding: 10px 18px; font-size: 16px; }
+/* Robot path panel */
+.path-pad { max-width: 980px; touch-action: none; user-select: none; }
+.path-pad.draw svg { cursor: crosshair; }
+.path-pad.mark svg { cursor: copy; }
+.field .f-bg { fill: var(--bg); stroke: var(--line); stroke-width: 2; }
+.field .f-grid { stroke: var(--line); stroke-width: 1; }
+.field .f-mid { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 8 6; }
+.field .f-red { fill: var(--red); opacity: .8; }
+.field .f-blue { fill: var(--blue); opacity: .8; }
+.field .f-lbl { font-size: 14px; font-weight: 600; }
+.field .f-lbl.red { fill: var(--red); }
+.field .f-lbl.blue { fill: var(--blue); }
+.field .f-path { fill: none; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+.field .f-start { fill: var(--panel); stroke-width: 3; }
+.field .f-tan { stroke-width: 4; stroke-linecap: butt; }
+.field .f-mdot { fill: var(--panel); stroke-width: 3; }
+.field .f-mbadge { fill: #e8590c; }
+.field .f-mnum { fill: #fff; font-size: 12px; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .field .f-path[style*="#16191f"], .field .f-start[style*="#16191f"] { stroke: #e7e9ee !important; } }
+.marker-notes { display: grid; gap: 6px; margin-top: 8px; }
+.mnote { display: flex; align-items: center; gap: 8px; }
+.mnote input { flex: 1; }
+.mnum { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: #e8590c; color: #fff; font-weight: 700; font-size: 12px; }
+.path-mini { max-width: 560px; }
+.path-legend, .path-notes { font-size: 12px; color: var(--muted); }
+.path-legend { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0; }
+.path-notes { margin: 4px 0 0; padding-left: 16px; }
+.path-legend .sw, .path-notes .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }

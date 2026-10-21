@@ -188,6 +188,7 @@
     main.innerHTML = fn();
     if (S.tab === 'predict') updatePrediction();
     if (S.tab === 'data') loadCatalogueAndShow(false);
+    if (S.tab === 'scout') setupPathPad();
   }
 
   function emptyState() {
@@ -968,6 +969,7 @@
         <div><h4>Ratings</h4><table><thead><tr><th></th><th class="n">Value</th><th class="n">Likely range</th><th class="n">Rank</th></tr></thead><tbody>${comps}</tbody></table>
           ${trendText(k) ? `<h4>Trend</h4><p>${trendText(k)}</p>` : ''}
           ${sc && sc.n ? `<h4>Scouting (${sc.n} entries)</h4><table><tbody>${scCols.filter(c => sc[c] != null).map(c => `<tr><td>${esc(c)}</td><td class="n">${f1(sc[c])}</td></tr>`).join('')}</tbody></table>` : ''}
+          ${teamPathsHtml(k, true)}
           <h4>Notes</h4><div class="rp-notes">${esc((ev.notes || {})[k] || '') || '&nbsp;'}</div></div>
         <div><h4>Matches</h4><table><thead><tr><th>Match</th><th></th><th>Partners</th><th>Opponents</th><th>Result</th><th>Problem</th></tr></thead><tbody>${ms}</tbody></table></div>
       </div></div>`;
@@ -1071,6 +1073,7 @@
             return `<p class="help"><b class="neg">Reliability: problems in ${rel.list.length} of ${rel.played} matches</b> — ${rel.list.map(x => `${matchLabel(x.m)} ${esc(issueText(x.iss))}${x.iss.note ? ' (' + esc(x.iss.note) + ')' : ''}`).join('; ')}. Those matches are left out of its rating.</p>`; })()}
           ${L ? `<p class="help">Schedule: partners vs. opponents ${sgn(L.tailwind, 1)} pts/match vs. average. Expected RS on this schedule ${f1(L.eSched, 2)} vs. ${f1(L.eRand, 2)} on a random one.</p>` : ''}
           ${sc && sc.n ? `<h3>Scouting (${sc.n} entries)</h3><table><tbody>${scCols.filter(c => sc[c] != null).map(c => `<tr><td>${esc(c)}</td><td class="n">${f1(sc[c])}</td></tr>`).join('')}</tbody></table>` : ''}
+          ${teamPathsHtml(k)}
           <h3 style="margin-top:12px">Notes</h3><textarea id="teamNotes" data-team-notes="${k}" rows="4" placeholder="Drive team notes, mechanisms, reliability…">${esc((ev.notes || {})[k] || '')}</textarea>
         </div>
         <div><h3>Matches</h3><table><thead><tr><th>Match</th><th></th><th>Partners</th><th>Opponents</th><th class="n">Win %</th><th>Result</th></tr></thead><tbody>${matchRows}</tbody></table></div>
@@ -1104,12 +1107,12 @@
   // One scout watches one robot (their seat: Red 1–3 / Blue 1–3) and counts its fuel.
   const SEATS = [['r', 0, 'Red 1'], ['r', 1, 'Red 2'], ['r', 2, 'Red 3'], ['b', 0, 'Blue 1'], ['b', 1, 'Blue 2'], ['b', 2, 'Blue 3']];
   function scoutState() {
-    S.sc = S.sc || { auto: 0, tele: 0, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '' };
+    S.sc = S.sc || { auto: 0, tele: 0, counted: true, status: 'ok', when: 'teleop', what: 'drivetrain', def: 0, note: '', path: [], markers: [], tool: 'draw' };
     return S.sc;
   }
   function scoutRow(matchKey, team) {
     const sc = S.event.scouting;
-    return sc && sc.rows ? sc.rows.find(r => r.match === matchKey && r.team === team && r.values[SCOUT_FUEL] != null && (r.scout || '') === (S.settings.scoutName || '')) : null;
+    return sc && sc.rows ? sc.rows.find(r => r.match === matchKey && r.team === team && r.at && (r.scout || '') === (S.settings.scoutName || '')) : null;
   }
   function scoutMatches() { return S.event.matches.filter(m => m.comp === 'qm' && m.red.length && m.blue.length); }
   function seatTeam(m, seat) { const [side, k] = (SEATS.find(x => x[2] === seat) || SEATS[0]); return (side === 'r' ? m.red : m.blue)[k]; }
@@ -1126,9 +1129,11 @@
     const t = m && seatTeam(m, S.settings.scoutSeat || 'Red 1');
     const row = m && t ? scoutRow(m.key, t) : null;
     const iss = m && t ? Model.robotIssue(m, t) : null;
-    Object.assign(st, { auto: row ? row.values[SCOUT_AUTO] || 0 : 0, tele: row ? row.values[SCOUT_FUEL] - (row.values[SCOUT_AUTO] || 0) : 0,
+    Object.assign(st, { counted: !row || row.values[SCOUT_FUEL] != null,
+      auto: row ? row.values[SCOUT_AUTO] || 0 : 0, tele: row && row.values[SCOUT_FUEL] != null ? row.values[SCOUT_FUEL] - (row.values[SCOUT_AUTO] || 0) : 0,
       def: row ? row.values[SCOUT_DEF] || 0 : 0, note: row ? row.note || '' : '',
-      status: iss ? iss.type : 'ok', when: (iss && iss.when) || 'teleop', what: (iss && iss.what) || 'drivetrain', loadedFor: m && m.key + '|' + t });
+      status: iss ? iss.type : 'ok', when: (iss && iss.when) || 'teleop', what: (iss && iss.what) || 'drivetrain', loadedFor: m && m.key + '|' + t,
+      path: row && row.path ? row.path.map(p => p.slice()) : [], markers: row && row.markers ? row.markers.map(k => Object.assign({}, k)) : [], tool: 'draw' });
   }
   function bumpCount(which, d) {
     const st = scoutState();
@@ -1145,9 +1150,11 @@
     const ev = S.event;
     const sc = ev.scouting = ev.scouting || { columns: [], rows: [], map: {}, show: {} };
     const who = S.settings.scoutName || '';
-    sc.rows = sc.rows.filter(r => !(r.match === m.key && r.team === t && (r.scout || '') === who && r.values[SCOUT_FUEL] != null));
-    sc.rows.push({ team: t, match: m.key, scout: who, at: Date.now(), note: st.note,
-      values: { [SCOUT_FUEL]: st.auto + st.tele, [SCOUT_AUTO]: st.auto, [SCOUT_DEF]: st.def } });
+    sc.rows = sc.rows.filter(r => !(r.match === m.key && r.team === t && (r.scout || '') === who && r.at));
+    // Only record fuel if the scout says they counted it: an uncounted 0 would read as "scored nothing".
+    const values = st.counted ? { [SCOUT_FUEL]: st.auto + st.tele, [SCOUT_AUTO]: st.auto, [SCOUT_DEF]: st.def } : { [SCOUT_DEF]: st.def };
+    sc.rows.push({ team: t, match: m.key, scout: who, at: Date.now(), note: st.note, values,
+      path: st.path.length > 1 ? st.path : undefined, markers: st.path.length > 1 && st.markers.length ? st.markers : undefined });
     for (const c of [SCOUT_FUEL, SCOUT_AUTO, SCOUT_DEF]) if (!sc.columns.includes(c)) sc.columns.push(c);
     sc.map[SCOUT_FUEL] = 'fuel'; sc.map[SCOUT_AUTO] = 'autoFuel';
     m.issues = m.issues || {};
@@ -1162,7 +1169,7 @@
     S.scoutMatch = ms[Math.min(ms.length - 1, i + 1)].key;
     S.sc = null;
     recompute();
-    toast(`Saved ${tnum(t)} in ${matchLabel(m)} — ${st.auto + st.tele} fuel. Now ${matchLabel(ms[Math.min(ms.length - 1, i + 1)])}.`);
+    toast(`Saved ${tnum(t)} in ${matchLabel(m)} — ${st.counted ? (st.auto + st.tele) + ' fuel' : 'fuel not counted'}. Now ${matchLabel(ms[Math.min(ms.length - 1, i + 1)])}.`);
   }
 
   // Scouting quality: compare the sum of scouted robots on an alliance with the official
@@ -1216,7 +1223,8 @@
           <div class="scout-team"><span class="sd">${matchLabel(m)} · ${esc(seat)}</span><div class="big-team">${esc(tnum(t))}</div><div class="sd">${esc(r ? r.name : '')}${done ? ' · <b class="pos">already scouted — saving replaces it</b>' : ''}</div></div>
           ${counter('auto', 'Auto fuel', 'A / Z')}
           ${counter('tele', 'Teleop fuel', 'S / X')}
-          <div class="ts-label" style="margin-top:6px">Total fuel: <b id="scoutTotal">${st.auto + st.tele}</b></div>
+          <div class="ts-label" style="margin-top:6px">Total fuel: <b id="scoutTotal">${st.auto + st.tele}</b>
+            <label style="margin-left:14px" title="Untick if you didn't count this robot's fuel (e.g. only traced its path). Nothing is recorded instead of a misleading 0."><input type="checkbox" id="scCounted" ${st.counted ? 'checked' : ''}> Fuel counted</label></div>
           <div class="toolbar" style="margin-top:10px">
             <label>Robot <select id="scStatus">${opt([['ok', 'OK'], ['broke', 'Broke'], ['noshow', 'No-show']], st.status)}</select></label>
             <span id="scBroke" ${st.status === 'broke' ? '' : 'hidden'}><label>When <select id="scWhen">${opt(PROBLEM_WHEN, st.when)}</select></label> <label>What <select id="scWhat">${opt(PROBLEM_WHAT, st.what)}</select></label></span>
@@ -1237,7 +1245,98 @@
           ${Object.keys(q.perScout).length ? `<table><thead><tr><th>Scout</th><th class="n">Checks</th><th class="n">Typical over/under</th></tr></thead><tbody>${Object.entries(q.perScout).map(([n, errs]) => `<tr><td>${esc(n)}</td><td class="n">${errs.length}</td><td class="n ${Math.abs(errs.reduce((a, b) => a + b, 0) / errs.length) > 0.1 ? 'neg' : ''}">${sgn(100 * errs.reduce((a, b) => a + b, 0) / errs.length, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
           ${worst.length ? `<h3 style="margin-top:12px">Worth a recheck</h3><table><tbody>${worst.map(c => `<tr><td><a data-match="${esc(c.m.key)}">${matchLabel(c.m)}</a> ${c.side}</td><td class="n">scouted ${f1(c.sum, 0)}</td><td class="n">official ${c.official}</td><td class="n neg">${sgn(100 * c.err, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
         </div>
+      </div>
+      <div class="card path-card" style="margin-top:14px"><h3>Robot path · ${esc(tnum(t))} in ${matchLabel(m)}</h3>
+        <div class="toolbar">
+          <div class="seg" role="group" aria-label="Path tool">
+            <button class="${st.tool === 'draw' ? 'on' : ''}" data-ptool="draw" title="Drag on the field to trace the robot's route (drawing again replaces it)">Trace path</button>
+            <button class="${st.tool === 'mark' ? 'on' : ''}" data-ptool="mark" title="Click on the line to add a marker">Add marker</button>
+          </div>
+          <button class="btn small" data-act="path-undo" ${st.markers.length ? '' : 'disabled'}>Undo marker</button>
+          <button class="btn small danger" data-act="path-clear" ${st.path.length ? '' : 'disabled'}>Clear path</button>
+          <span class="help">${st.tool === 'draw' ? 'Drag to trace the route.' : 'Click on the line: the marker snaps onto it and points along the direction of travel.'} Saved with <b>Save &amp; next</b>.</span>
+        </div>
+        <div id="pathPad" class="path-pad ${st.tool}">${fieldSvg([{ path: st.path, markers: st.markers }], { numbered: true })}</div>
+        <div class="marker-notes">${st.markers.map((k, i) => `<label class="mnote"><span class="mnum">${i + 1}</span><input data-mnote="${i}" value="${esc(k.note || '')}" placeholder="Note for marker ${i + 1} (e.g. picked up fuel, got defended)"></label>`).join('')}</div>
       </div>`;
+  }
+
+  // Field drawing shared by the Scout tab, team pages and printed reports. Schematic only:
+  // alliance walls, centerline and a grid (no detailed 2026 field elements).
+  const PATH_COLORS = ['#2b62d9', '#d73a3a', '#1a7f37', '#b7791f', '#7c3aed', '#0e7490', '#be185d', '#4b5563'];
+  function fieldSvg(items, opts = {}) {
+    const W = Paths.FIELD_W, H = Paths.FIELD_H;
+    let g = `<svg class="field" viewBox="-8 -8 ${W + 16} ${H + 16}" width="100%" role="img" aria-label="Field with traced robot path">`;
+    g += `<rect x="0" y="0" width="${W}" height="${H}" rx="6" class="f-bg"/>`;
+    for (let x = 100; x < W; x += 100) g += `<line x1="${x}" y1="0" x2="${x}" y2="${H}" class="f-grid"/>`;
+    for (let y = 100; y < H; y += 100) g += `<line x1="0" y1="${y}" x2="${W}" y2="${y}" class="f-grid"/>`;
+    g += `<line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H}" class="f-mid"/>`;
+    g += `<rect x="0" y="0" width="10" height="${H}" class="f-red"/><rect x="${W - 10}" y="0" width="10" height="${H}" class="f-blue"/>`;
+    g += `<text x="18" y="22" class="f-lbl red">Red alliance wall</text><text x="${W - 18}" y="22" text-anchor="end" class="f-lbl blue">Blue alliance wall</text>`;
+    items.forEach((it, n) => {
+      const col = opts.numbered ? '#16191f' : PATH_COLORS[n % PATH_COLORS.length];
+      const p = it.path || [];
+      if (p.length > 1) g += `<polyline points="${p.map(q => q.join(',')).join(' ')}" class="f-path" style="stroke:${col}"${it.title ? '' : ' id="livePath"'}><title>${esc(it.title || '')}</title></polyline>`;
+      if (p.length) g += `<circle cx="${p[0][0]}" cy="${p[0][1]}" r="7" class="f-start" style="stroke:${col}"><title>Start${it.title ? ' · ' + esc(it.title) : ''}</title></circle>`;
+      (it.markers || []).forEach((k, i) => {
+        const ps = Paths.pose(p, k.seg, k.t);
+        if (!ps) return;
+        const deg = ps.angle * 180 / Math.PI;
+        // Marker: a bar lying exactly along the tangent, an arrowhead for direction of travel,
+        // and its number set off along the normal so it never covers the line.
+        g += `<g transform="translate(${ps.x.toFixed(1)},${ps.y.toFixed(1)}) rotate(${deg.toFixed(2)})" class="f-marker"><title>${esc((it.title ? it.title + ' · ' : '') + 'Marker ' + (i + 1) + (k.note ? ': ' + k.note : ''))}</title>
+          <line x1="-22" y1="0" x2="22" y2="0" class="f-tan" style="stroke:${opts.numbered ? '#e8590c' : col}"/>
+          <path d="M22,0 L12,-7 L12,7 Z" style="fill:${opts.numbered ? '#e8590c' : col}"/>
+          <circle cx="0" cy="0" r="5.5" class="f-mdot" style="stroke:${opts.numbered ? '#e8590c' : col}"/>
+          ${opts.numbered ? `<g transform="translate(0,-20) rotate(${(-deg).toFixed(2)})"><circle r="10" class="f-mbadge"/><text text-anchor="middle" dy="4" class="f-mnum">${i + 1}</text></g>` : ''}
+        </g>`;
+      });
+    });
+    return g + '</svg>';
+  }
+
+  // Pointer handling for the Scout tab's path pad (attached after each render).
+  function setupPathPad() {
+    const pad = $('#pathPad');
+    const svg = pad && pad.querySelector('svg');
+    if (!svg) return;
+    const st = scoutState();
+    const toField = e => { const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; const q = pt.matrixTransform(svg.getScreenCTM().inverse()); return [q.x, q.y]; };
+    let drawing = false;
+    svg.addEventListener('pointerdown', e => {
+      e.preventDefault(); // keep the browser from moving focus on click (the note box gets it)
+      const [x, y] = toField(e);
+      if (st.tool === 'draw') {
+        drawing = true; svg.setPointerCapture(e.pointerId);
+        st.path = []; st.markers = [];
+        Paths.addPoint(st.path, x, y);
+        let live = svg.querySelector('#livePath');
+        if (!live) { live = document.createElementNS('http://www.w3.org/2000/svg', 'polyline'); live.setAttribute('id', 'livePath'); live.setAttribute('class', 'f-path'); live.style.stroke = '#16191f'; svg.appendChild(live); }
+        svg.querySelectorAll('.f-marker').forEach(n => n.remove());
+        live.setAttribute('points', st.path.map(q => q.join(',')).join(' '));
+      } else {
+        if (st.path.length < 2) { toast('Trace the path first, then add markers on it.'); return; }
+        const hit = Paths.project(st.path, x, y);
+        if (!hit || hit.dist > Paths.SNAP) { toast('Click on the line to place a marker.'); return; }
+        st.markers.push({ seg: hit.seg, t: Math.round(hit.t * 1000) / 1000, note: '' });
+        // Keep markers in order along the path so numbers follow the route.
+        st.markers.sort((a, b) => a.seg + a.t - (b.seg + b.t));
+        render();
+        const idx = st.markers.findIndex(k => k.seg === hit.seg && Math.abs(k.t - Math.round(hit.t * 1000) / 1000) < 1e-9);
+        // Focus the new marker's note once the click has finished, so typing goes straight in.
+        setTimeout(() => { const inp = document.querySelector(`[data-mnote="${idx}"]`); if (inp) inp.focus(); }, 0);
+      }
+    });
+    svg.addEventListener('pointermove', e => {
+      if (!drawing) return;
+      const [x, y] = toField(e);
+      Paths.addPoint(st.path, x, y);
+      const live = svg.querySelector('#livePath');
+      if (live) live.setAttribute('points', st.path.map(q => q.join(',')).join(' '));
+    });
+    const end = () => { if (!drawing) return; drawing = false; if (st.path.length < 2) st.path = []; render(); };
+    svg.addEventListener('pointerup', end);
+    svg.addEventListener('pointercancel', end);
   }
   function scoutedFuel(matchKey, t) {
     const sc = S.event.scouting;
@@ -1257,6 +1356,21 @@
     }
     if (any && !sc.columns.includes(SCOUT_FUEL)) sc.columns.push(SCOUT_FUEL);
     if (sc.columns.includes(SCOUT_FUEL)) sc.map[SCOUT_FUEL] = 'fuel';
+  }
+
+  // All traced paths for a team, one color per match, with marker notes listed.
+  function teamPathsHtml(k, print) {
+    const sc = S.event.scouting;
+    const rows = sc && sc.rows ? sc.rows.filter(r => r.team === k && r.path && r.path.length > 1) : [];
+    if (!rows.length) return '';
+    const label = r => { const m = S.event.matches.find(x => x.key === r.match); return m ? matchLabel(m) : r.match; };
+    rows.sort((a, b) => Model.matchOrder(S.event.matches.find(x => x.key === a.match) || {}) - Model.matchOrder(S.event.matches.find(x => x.key === b.match) || {}));
+    const items = rows.map(r => ({ path: r.path, markers: r.markers || [], title: label(r) + (r.scout ? ' (' + r.scout + ')' : '') }));
+    const notes = rows.flatMap((r, n) => (r.markers || []).filter(x => x.note).map(x => `<li><span class="sw" style="background:${PATH_COLORS[n % PATH_COLORS.length]}"></span>${esc(label(r))}: ${esc(x.note)}</li>`)).join('');
+    return `${print ? '<h4>Traced paths</h4>' : '<h3 style="margin-top:12px">Traced paths</h3>'}
+      <div class="path-mini">${fieldSvg(items)}</div>
+      <div class="path-legend">${rows.map((r, n) => `<span><span class="sw" style="background:${PATH_COLORS[n % PATH_COLORS.length]}"></span>${esc(label(r))}</span>`).join(' ')}</div>
+      ${notes ? `<ul class="path-notes">${notes}</ul>` : ''}`;
   }
 
   // ---------- Match editor ----------
@@ -1612,6 +1726,8 @@
     },
     'clear-picked': () => { S.event.picked = {}; persist(); render(); },
     'scout-save': () => saveScout(),
+    'path-undo': () => { const st = scoutState(); st.markers.pop(); render(); },
+    'path-clear': () => { const st = scoutState(); st.path = []; st.markers = []; render(); },
     'print-team': el => printHtml(teamReportHtml(el.dataset.key)),
     'print-match': el => { const m = S.event.matches.find(x => x.key === el.dataset.key); if (m) printHtml(matchSheetHtml(m)); },
     'print-picks': () => printHtml(pickListHtml()),
@@ -1645,6 +1761,8 @@
 
   // ---------- events ----------
   document.addEventListener('click', e => {
+    const pt = e.target.closest('[data-ptool]');
+    if (pt) { scoutState().tool = pt.dataset.ptool; render(); return; }
     const bump = e.target.closest('[data-bump]');
     if (bump) { const [w, d] = bump.dataset.bump.split(':'); bumpCount(w, +d); return; }
     const ps = e.target.closest('[data-poolsort]');
@@ -1694,6 +1812,7 @@
     if (el.id === 'scoutName') { S.settings.scoutName = el.value.trim(); Store.saveSettings(S.settings); S.sc = null; render(); return; }
     if (el.id === 'scoutSeat') { S.settings.scoutSeat = el.value; Store.saveSettings(S.settings); S.sc = null; S.scoutMatch = null; render(); return; }
     if (el.id === 'scoutMatch') { S.scoutMatch = el.value; S.sc = null; render(); return; }
+    if (el.id === 'scCounted') { scoutState().counted = el.checked; return; }
     if (el.id === 'scStatus') { scoutState().status = el.value; const b = $('#scBroke'); if (b) b.hidden = el.value !== 'broke'; return; }
     if (el.id === 'scWhen') { scoutState().when = el.value; return; }
     if (el.id === 'scWhat') { scoutState().what = el.value; return; }
@@ -1752,6 +1871,7 @@
     }
     if (el.classList.contains('pt')) { updatePrediction(); return; }
     if (el.id === 'scNote') { scoutState().note = el.value; return; }
+    if (el.dataset.mnote != null) { const k = scoutState().markers[+el.dataset.mnote]; if (k) k.note = el.value; return; }
     if (el.id === 'evSearch') { S.evQuery = el.value; refreshEventResults(); return; }
     if (el.dataset.teamNotes) {
       S.event.notes = S.event.notes || {};
