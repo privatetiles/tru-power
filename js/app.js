@@ -800,7 +800,7 @@
       </div>
 
       <div class="card"><h3>2 · Back up / share (no wifi needed)</h3>
-        <p class="help">Export a file and move it with AirDrop or a USB stick. Importing merges with what's already here (newest result for each match wins).</p>
+        <p class="help">Export a file and move it on a USB stick. Avoid AirDrop at events: it creates an ad-hoc wireless link, which rule E301 likely prohibits. Importing merges with what's already here (newest result for each match wins).</p>
         <p>${ev ? '<button class="btn" data-act="export-event">Export this event</button> ' : ''}<button class="btn" data-act="export-all">Export everything</button>
         <label class="btn">Import file…<input type="file" id="importFile" accept=".json,application/json" hidden></label></p>
       </div>
@@ -1232,6 +1232,8 @@
             ${statCard('Typical miss', mae == null ? '—' : pct(mae, 0), 'scouted vs official fuel')}
           </div>
           <p class="help">Each check adds up the three scouted robots and compares with the official alliance fuel count. Within about 10–15% is good counting. A scout who is consistently high or low should adjust.</p>
+          ${q.checks.length ? '' : '<p class="help"><b>No checks yet.</b> They need all three robots on an alliance scouted and the official fuel count, which arrives from TBA when online (or type it into the match editor).</p>'}
+          <p class="help"><b>No internet needed.</b> Each scout saves on their own laptop. At a break, use Data → Export and carry the file to the main laptop on a USB stick, then Import there (merging never double-counts).</p>
           ${Object.keys(q.perScout).length ? `<table><thead><tr><th>Scout</th><th class="n">Checks</th><th class="n">Typical over/under</th></tr></thead><tbody>${Object.entries(q.perScout).map(([n, errs]) => `<tr><td>${esc(n)}</td><td class="n">${errs.length}</td><td class="n ${Math.abs(errs.reduce((a, b) => a + b, 0) / errs.length) > 0.1 ? 'neg' : ''}">${sgn(100 * errs.reduce((a, b) => a + b, 0) / errs.length, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
           ${worst.length ? `<h3 style="margin-top:12px">Worth a recheck</h3><table><tbody>${worst.map(c => `<tr><td><a data-match="${esc(c.m.key)}">${matchLabel(c.m)}</a> ${c.side}</td><td class="n">scouted ${f1(c.sum, 0)}</td><td class="n">official ${c.official}</td><td class="n neg">${sgn(100 * c.err, 0)}%</td></tr>`).join('')}</tbody></table>` : ''}
         </div>

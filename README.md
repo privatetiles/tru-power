@@ -22,7 +22,7 @@
    - **Auto-sync (on by default):** whenever the Mac has internet, new official results arrive from TBA every 2 minutes with no typing. Unchanged data costs almost nothing, since it is checked by ETag.
    - **Downloading mid-event works too:** played results are rated and only the remaining matches are forecast.
 4. **Share between laptops:**
-   - Use **Data → Export**, then AirDrop or USB the file.
+   - Use **Data → Export**, then move the file on a **USB stick**. Avoid AirDrop at events: it works by creating an ad-hoc wireless link, and rule E301 bans team ad-hoc networks.
    - On the other laptop, use **Import**. It merges with what is already there; the newest result wins.
    - Hotspots are illegal at events (manual rule E301), so this is the way to share.
 
